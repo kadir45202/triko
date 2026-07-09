@@ -140,15 +140,21 @@ function summarize() {
   var preview = byType.preview_opened || 0;
   var visit = byType.product_page_visit || 0;
 
+  var cart = byType.combo_add_to_cart || 0;
+
   return {
     totalEvents: events.length,
     uniqueSessions: Object.keys(sessions).length,
     byType: byType,
     byCombo: byCombo,
+    funnel: { shown: shown, preview: preview, visit: visit, cart: cart },
     rates: {
       previewRate: shown ? Math.round((preview / shown) * 1000) / 10 : 0,   // balon → önizleme %
       visitRate: preview ? Math.round((visit / preview) * 1000) / 10 : 0,   // önizleme → ürün sayfası %
     },
+    recent: events.slice(-20).reverse().map(function (e) {
+      return { type: e.eventType, comboId: e.comboId, ts: e.ts, page: e.pageUrl };
+    }),
   };
 }
 
@@ -169,25 +175,47 @@ var DASHBOARD = '<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">' +
   'th{background:#faf9fc;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#6b7280}' +
   'tr:last-child td{border-bottom:0}.mono{font-family:ui-monospace,monospace;font-size:12px}' +
   '.empty{color:#9ca3af;padding:24px;text-align:center}' +
+  'h2{font-size:13px;letter-spacing:1.5px;text-transform:uppercase;color:#6b7280;margin:30px 0 12px}' +
+  '.funnel{display:flex;gap:8px;align-items:flex-end;background:#fff;border-radius:14px;padding:22px;box-shadow:0 2px 10px rgba(0,0,0,.05)}' +
+  '.fstep{flex:1;text-align:center}.fbar{background:linear-gradient(180deg,#9f6bfd,#7c3aed);border-radius:8px 8px 3px 3px;margin:0 auto;width:70%;min-height:6px;transition:height .5s ease}' +
+  '.fstep .fv{font-size:18px;font-weight:800;margin-top:8px}.fstep .fl{font-size:10.5px;color:#6b7280;letter-spacing:1px;text-transform:uppercase;margin-top:2px}' +
+  '.farrow{align-self:center;color:#c9c2dd;font-size:18px;padding-bottom:34px}' +
+  '.feed{background:#fff;border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.05);max-height:300px;overflow-y:auto}' +
+  '.fe{display:flex;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid #f0eef4;font-size:12.5px}' +
+  '.fe:last-child{border-bottom:0}.fe .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}' +
+  '.fe .t{color:#9ca3af;font-size:11px;margin-left:auto;white-space:nowrap}' +
   '</style></head><body>' +
-  '<h1>MASKOT <em>ANALİTİK</em></h1>' +
-  '<div class="sub">Canlı demo verisi — 5 sn\'de bir yenilenir · events.jsonl</div>' +
+  '<h1>SERENY <em>ANALİTİK</em></h1>' +
+  '<div class="sub">Canlı demo verisi — 5 sn\'de bir yenilenir</div>' +
   '<div class="cards" id="cards"></div>' +
+  '<h2>Dönüşüm Hunisi</h2><div class="funnel" id="funnel"></div>' +
+  '<h2>Kombin Performansı</h2>' +
   '<table><thead><tr><th>Kombin</th><th>Gösterim</th><th>Önizleme</th><th>Ürün Ziyareti</th><th>Kapatma</th><th>Tıklama Oranı</th></tr></thead>' +
   '<tbody id="rows"><tr><td colspan="6" class="empty">Veri bekleniyor…</td></tr></tbody></table>' +
+  '<h2>Canlı Akış (son 20 event)</h2><div class="feed" id="feed"><div class="empty">Veri bekleniyor…</div></div>' +
   '<script>' +
+  'var TYPE_TR={mascot_shown:["Maskot göründü","#94a3b8"],combo_shown:["Kombin gösterildi","#7c3aed"],combo_dismissed:["Kapatıldı","#f59e0b"],preview_opened:["Önizleme açıldı","#0ea5e9"],product_page_visit:["Ürün sayfası ziyareti","#10b981"],combo_add_to_cart:["Sepete eklendi","#16a34a"],mascot_clicked:["Maskota tıklandı","#d946ef"]};' +
+  'function comboName(id){if(!id)return"";var m=id.match(/^combo_(.+)_((?:e|k)-[a-z-]+)$/);return m?m[1]+" → "+m[2]:id}' +
   'function card(v,l){return \'<div class="card"><div class="v">\'+v+\'</div><div class="l">\'+l+\'</div></div>\'}' +
+  'function fstep(v,max,l){var h=max?Math.max(6,Math.round(v/max*90)):6;return \'<div class="fstep"><div class="fbar" style="height:\'+h+\'px"></div><div class="fv">\'+v+\'</div><div class="fl">\'+l+\'</div></div>\'}' +
   'function refresh(){fetch("/api/analytics/summary").then(function(r){return r.json()}).then(function(s){' +
-  'var t=s.byType||{};' +
+  'var t=s.byType||{};var f=s.funnel||{shown:0,preview:0,visit:0,cart:0};' +
   'document.getElementById("cards").innerHTML=' +
   'card(s.uniqueSessions,"Oturum")+card(t.combo_shown||0,"Kombin Gösterimi")+' +
   'card(t.preview_opened||0,"Önizleme")+card(t.product_page_visit||0,"Ürün Ziyareti")+' +
   'card(s.rates.previewRate+"%","Önizleme Oranı")+card(s.rates.visitRate+"%","Geçiş Oranı");' +
+  'var ar=\'<div class="farrow">→</div>\';' +
+  'document.getElementById("funnel").innerHTML=' +
+  'fstep(f.shown,f.shown,"Gösterim")+ar+fstep(f.preview,f.shown,"Önizleme")+ar+fstep(f.visit,f.shown,"Ürün Ziyareti")+ar+fstep(f.cart,f.shown,"Sepet");' +
   'var rows="";var ids=Object.keys(s.byCombo||{});' +
   'for(var i=0;i<ids.length;i++){var c=s.byCombo[ids[i]];' +
   'var rate=c.shown?Math.round(c.preview/c.shown*1000)/10+"%":"—";' +
-  'rows+="<tr><td class=mono>"+ids[i]+"</td><td>"+c.shown+"</td><td>"+c.preview+"</td><td>"+c.visit+"</td><td>"+c.dismissed+"</td><td>"+rate+"</td></tr>"}' +
+  'rows+="<tr><td class=mono>"+comboName(ids[i])+"</td><td>"+c.shown+"</td><td>"+c.preview+"</td><td>"+c.visit+"</td><td>"+c.dismissed+"</td><td>"+rate+"</td></tr>"}' +
   'document.getElementById("rows").innerHTML=rows||\'<tr><td colspan="6" class="empty">Henüz kombin verisi yok — mağazada gezinin!</td></tr>\';' +
+  'var feed="";var rc=s.recent||[];' +
+  'for(var j=0;j<rc.length;j++){var e=rc[j];var m=TYPE_TR[e.type]||[e.type,"#9ca3af"];' +
+  'feed+=\'<div class="fe"><span class="dot" style="background:\'+m[1]+\'"></span><span>\'+m[0]+(e.comboId?\' · <b>\'+comboName(e.comboId)+\'</b>\':"")+\'</span><span class="t">\'+new Date(e.ts).toLocaleTimeString("tr-TR")+\'</span></div>\'}' +
+  'document.getElementById("feed").innerHTML=feed||\'<div class="empty">Henüz event yok</div>\';' +
   '}).catch(function(){})}' +
   'refresh();setInterval(refresh,5000);' +
   '</script></body></html>';
