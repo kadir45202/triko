@@ -206,7 +206,7 @@
       imageUrl: null, // null → yerleşik SVG maskot kullanılır
       size: 68,
       primaryColor: '#7c3aed',
-      name: 'Stil',
+      name: 'Triko',
     },
     behavior: {
       proactiveDelayMs: 6000,

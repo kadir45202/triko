@@ -190,7 +190,7 @@ const CONFIG = {
     imageUrl: 'https://cdn.maskot.app/customers/xxx/mascot.png',
     size: 68,           // px
     primaryColor: '#7c3aed',
-    name: 'Stil',       // maskotun adı (balonda gösterilir)
+    name: 'Triko',       // maskotun adı (balonda gösterilir)
   },
   behavior: {
     proactiveDelayMs: 6000,
@@ -397,7 +397,7 @@ model MascotSettings {
 
   imageUrl        String?
   primaryColor    String   @default("#7c3aed")
-  mascotName      String   @default("Stil")
+  mascotName      String   @default("Triko")
   sizeDesktop     Int      @default(68)
   sizeMobile      Int      @default(52)
 

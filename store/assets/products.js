@@ -124,7 +124,7 @@
     }
 
     window.MASKOT_CONFIG = {
-      mascot: { name: 'Stil', primaryColor: '#7c3aed' },
+      mascot: { name: 'Triko', primaryColor: '#7c3aed' },
       behavior: { proactiveDelayMs: 4500, proactiveIntervalMs: 35000 },
       combos: combos,
     };

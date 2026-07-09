@@ -34,7 +34,7 @@ Söz dizimi kontrolü: `npm run check`
 
 ## Maskot Yetenekleri
 
-**Karakter (Stil):** gradyanlı top gövde, papyon, yanaklar, salınan antenler,
+**Karakter (Triko):** gradyanlı top gövde, papyon, yanaklar, salınan antenler,
 zemin gölgesi; yürürken yöne eğilir + hoplar, varışta iniş esnemesi yapar.
 
 - **Canlı yüz:** göz bebekleri en yakın ürüne bakar, kullanıcı yaklaşınca imleci
@@ -58,7 +58,7 @@ zemin gölgesi; yürürken yöne eğilir + hoplar, varışta iniş esnemesi yapa
   KVKK uyumlu); kombin havuzundan profile en uygun öneri seçilir; eşleşmede
   "Siyah parçaları seviyorsun galiba 🖤" tarzı kişisel satır çıkar.
 - **Attribution:** maskot önerisinden gidilen ürün sayfası `?ref=maskot` ile
-  açılır — "✨ Stil önerdi" rozeti görünür, ziyaret ve sepete ekleme backend'e sayılır.
+  açılır — "✨ Triko önerdi" rozeti görünür, ziyaret ve sepete ekleme backend'e sayılır.
 - **Güvenli alan:** maskot 4 kenardan sınırlıdır (üstte balon, altta etiket payı);
   konuşma balonu her pozisyonda tam okunur.
 

@@ -257,7 +257,7 @@ var server = http.createServer(function (req, res) {
   // Widget config (şimdilik statik demo — üretimde müşteri DB'sinden gelecek)
   if (req.method === 'GET' && url === '/api/widget/config') {
     sendJSON(res, 200, {
-      mascot: { name: 'Stil', primaryColor: '#7c3aed' },
+      mascot: { name: 'Triko', primaryColor: '#7c3aed' },
       behavior: { proactiveDelayMs: 4500, proactiveIntervalMs: 35000 },
     });
     return;
