@@ -1,7 +1,7 @@
 {
-  "name": "sereny-ai",
+  "name": "triko",
   "version": "0.3.0",
-  "description": "Sereny AI — e-ticaret moda siteleri için yüzen stil asistanı maskot (widget + demo mağaza + lite backend)",
+  "description": "Triko — e-ticaret moda siteleri için yüzen stil asistanı maskot (widget + demo mağaza + lite backend)",
   "private": true,
   "scripts": {
     "start": "node server/server.js",
@@ -12,7 +12,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kadir45202/sereny-ai.git"
+    "url": "https://github.com/kadir45202/triko.git"
   },
   "license": "UNLICENSED"
 }

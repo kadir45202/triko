@@ -1,4 +1,4 @@
-# Sereny AI — Moda Stil Asistanı Maskotu
+# Triko — Moda Stil Asistanı Maskotu
 
 E-ticaret moda sitelerinde sayfada yüzen, kombin öneren, canlı hissettiren animasyonlu
 maskot widget'ı. Widget + ATELIER demo mağazası + lite backend tek repoda.
@@ -78,7 +78,7 @@ Sıfır bağımlılık Node sunucusu (`server/server.js`):
 ## Dizin Yapısı
 
 ```
-sereny-ai/
+triko/
 ├── PROMPT.md          # Tam geliştirici spec'i
 ├── package.json       # npm start / npm run check
 ├── widget/

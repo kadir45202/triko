@@ -185,7 +185,7 @@ var DASHBOARD = '<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">' +
   '.fe:last-child{border-bottom:0}.fe .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}' +
   '.fe .t{color:#9ca3af;font-size:11px;margin-left:auto;white-space:nowrap}' +
   '</style></head><body>' +
-  '<h1>SERENY <em>ANALİTİK</em></h1>' +
+  '<h1>TRİKO <em>ANALİTİK</em></h1>' +
   '<div class="sub">Canlı demo verisi — 5 sn\'de bir yenilenir</div>' +
   '<div class="cards" id="cards"></div>' +
   '<h2>Dönüşüm Hunisi</h2><div class="funnel" id="funnel"></div>' +
@@ -293,5 +293,5 @@ var server = http.createServer(function (req, res) {
 });
 
 server.listen(PORT, function () {
-  console.log('Sereny AI demo: http://localhost:' + PORT + '/store/  (analitik: /analytics)');
+  console.log('Triko demo: http://localhost:' + PORT + '/store/  (analitik: /analytics)');
 });
