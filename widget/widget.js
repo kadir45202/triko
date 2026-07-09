@@ -1422,12 +1422,40 @@
   // Başlatma
   // ---------------------------------------------------------------
   var init = safely(function () {
-    // Config: script tag token'ı + window override (Sprint 2'de API fetch)
+    // Config öncelik sırası: DEFAULT < API config < sayfanın window.MASKOT_CONFIG'i
     var script = document.currentScript || document.querySelector('script[data-token]');
-    var token = script ? script.getAttribute('data-token') : 'demo';
-    CONFIG = mergeConfig(DEFAULT_CONFIG, window.MASKOT_CONFIG || null);
-    CONFIG.token = token || CONFIG.token;
+    var token = (script && script.getAttribute('data-token')) || 'demo';
+    state.apiBase = (script && script.getAttribute('data-api')) || null;
 
+    var applyConfig = function (apiCfg) {
+      CONFIG = mergeConfig(mergeConfig(DEFAULT_CONFIG, apiCfg || null), window.MASKOT_CONFIG || null);
+      CONFIG.token = token || CONFIG.token;
+    };
+
+    // Backend varsa config'i oradan çek — 800ms cevap yoksa yerel config ile sessizce devam
+    if (state.apiBase && window.fetch) {
+      var started = false;
+      var proceed = function (apiCfg) {
+        if (started) return;
+        started = true;
+        applyConfig(apiCfg);
+        startWidget(script);
+      };
+      window.setTimeout(safely(function () { proceed(null); }), 800);
+      try {
+        fetch(state.apiBase + '/api/widget/config?token=' + encodeURIComponent(token) +
+              '&url=' + encodeURIComponent(window.location.href))
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (cfg) { proceed(cfg); })
+          .catch(function () { proceed(null); });
+      } catch (e) { proceed(null); }
+    } else {
+      applyConfig(null);
+      startWidget(script);
+    }
+  });
+
+  var startWidget = safely(function (script) {
     state.reducedMotion =
       window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     state.isMobile = window.innerWidth < 768;
@@ -1454,9 +1482,6 @@
     window.addEventListener('resize', safely(function () {
       setMascotPos(currentPos.x, currentPos.y, 300);
     }), { passive: true });
-
-    // Backend adresi (opsiyonel): <script data-api="http://localhost:3001">
-    state.apiBase = (script && script.getAttribute('data-api')) || null;
 
     // Sayfanın beslediği ürün görüntüleme kuyruğunu işle (oturum profili)
     processQueue();

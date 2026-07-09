@@ -1,0 +1,18 @@
+{
+  "name": "sereny-ai",
+  "version": "0.3.0",
+  "description": "Sereny AI — e-ticaret moda siteleri için yüzen stil asistanı maskot (widget + demo mağaza + lite backend)",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "check": "node --check widget/widget.js && node --check store/assets/products.js && node --check server/server.js && echo 'SYNTAX OK'"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kadir45202/sereny-ai.git"
+  },
+  "license": "UNLICENSED"
+}

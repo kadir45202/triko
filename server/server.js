@@ -20,6 +20,37 @@ var path = require('path');
 
 var PORT = process.env.PORT || 3001;
 var EVENTS_FILE = path.join(__dirname, 'events.jsonl');
+var ROOT = path.join(__dirname, '..'); // repo kökü — statik servis buradan
+
+var MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon', '.json': 'application/json',
+};
+
+// Statik dosya servisi: /store/, /widget/, /demo/ → tek komutla tüm demo
+function serveStatic(req, res, urlPath) {
+  var clean = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
+  var filePath = path.resolve(path.join(ROOT, clean));
+  if (filePath.indexOf(path.resolve(ROOT)) !== 0) {
+    sendJSON(res, 403, { error: 'forbidden' });
+    return;
+  }
+  fs.stat(filePath, function (err, st) {
+    if (!err && st.isDirectory()) filePath = path.join(filePath, 'index.html');
+    fs.readFile(filePath, function (err2, data) {
+      if (err2) { sendJSON(res, 404, { error: 'not_found' }); return; }
+      cors(res);
+      res.writeHead(200, {
+        'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      });
+      res.end(data);
+    });
+  });
+}
 
 var VALID_EVENTS = [
   'mascot_shown', 'combo_shown', 'combo_dismissed',
@@ -211,9 +242,22 @@ var server = http.createServer(function (req, res) {
   }
 
   // Dashboard
-  if (req.method === 'GET' && (url === '/' || url === '/analytics')) {
+  if (req.method === 'GET' && url === '/analytics') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(DASHBOARD);
+    return;
+  }
+
+  // Kök: mağazaya yönlendir (tek komut demo deneyimi)
+  if (req.method === 'GET' && url === '/') {
+    res.writeHead(302, { Location: '/store/' });
+    res.end();
+    return;
+  }
+
+  // Statik dosyalar: /store/, /widget/, /demo/
+  if (req.method === 'GET' && /^\/(store|widget|demo)(\/|$)/.test(url)) {
+    serveStatic(req, res, url);
     return;
   }
 
@@ -221,5 +265,5 @@ var server = http.createServer(function (req, res) {
 });
 
 server.listen(PORT, function () {
-  console.log('Maskot backend: http://localhost:' + PORT + '  (dashboard: /analytics)');
+  console.log('Sereny AI demo: http://localhost:' + PORT + '/store/  (analitik: /analytics)');
 });

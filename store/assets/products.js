@@ -144,8 +144,10 @@
     var s = document.createElement('script');
     s.src = '../widget/widget.js';
     s.setAttribute('data-token', 'demo-atelier');
-    // Backend çalışıyorsa event'ler oraya da gider; kapalıysa widget sessizce console'da kalır
-    s.setAttribute('data-api', 'http://localhost:3001');
+    // Backend çalışıyorsa event'ler oraya da gider; kapalıysa widget sessizce console'da kalır.
+    // Node sunucusundan (3001) servis ediliyorsak aynı origin'i kullan.
+    s.setAttribute('data-api',
+      window.location.port === '3001' ? window.location.origin : 'http://localhost:3001');
     s.async = true;
     document.body.appendChild(s);
   }
