@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kadın Koleksiyonu — ATELIER</title>
+  <link rel="stylesheet" href="assets/store.css">
+</head>
+<body>
+  <nav class="topbar">
+    <a class="logo" href="index.html">ATELIER<em>.</em></a>
+    <div class="links">
+      <a href="index.html">Anasayfa</a>
+      <a href="kadin.html" class="active">Kadın</a>
+      <a href="erkek.html">Erkek</a>
+      <a href="lookbook.html">Lookbook</a>
+    </div>
+    <div class="icons"><span title="Ara">🔍</span><span title="Favoriler">🤍</span><span title="Sepet">🛒</span></div>
+  </nav>
+
+  <header class="cat-banner" style="background:linear-gradient(150deg,#d9b8cb,#b58aa5)">
+    <div class="veil"></div>
+    <h1>KADIN</h1>
+    <p>Saten elbiselerden hasır şapkalara — sezonun kadın seçkisi</p>
+  </header>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Tüm Ürünler</h2>
+      <p>7 parça · Hepsi kombinlenmeye hazır</p>
+    </div>
+    <div class="grid" id="kadin-grid"></div>
+  </section>
+
+  <footer>
+    <span class="flogo">ATELIER.</span>
+    <span>Demo mağaza — AI Maskot test ortamı</span>
+    <span>© 2026</span>
+  </footer>
+
+  <script src="assets/products.js"></script>
+  <script>
+    ATELIER.renderGrid('kadin-grid', function (p) { return p.cat === 'kadin'; });
+    // Kategori sayfası: kadın kombinleriyle maskot
+    ATELIER.initMascot({ productIds: ['k-elbise-midi', 'k-trenckot', 'k-gunes-gozlugu'] });
+  </script>
+</body>
+</html>

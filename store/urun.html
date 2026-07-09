@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ürün — ATELIER</title>
+  <link rel="stylesheet" href="assets/store.css">
+</head>
+<body>
+  <nav class="topbar">
+    <a class="logo" href="index.html">ATELIER<em>.</em></a>
+    <div class="links">
+      <a href="index.html">Anasayfa</a>
+      <a href="kadin.html">Kadın</a>
+      <a href="erkek.html">Erkek</a>
+      <a href="lookbook.html">Lookbook</a>
+    </div>
+    <div class="icons"><span title="Ara">🔍</span><span title="Favoriler">🤍</span><span title="Sepet">🛒</span></div>
+  </nav>
+
+  <main class="pdp" id="pdp">
+    <!-- products.js doldurur -->
+  </main>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Bunlarla Kombinle</h2>
+      <p>Stil ekibimizin bu ürünle önerdiği parçalar</p>
+    </div>
+    <div class="grid" id="combo-grid"></div>
+  </section>
+
+  <footer>
+    <span class="flogo">ATELIER.</span>
+    <span>Demo mağaza — AI Maskot test ortamı</span>
+    <span>© 2026</span>
+  </footer>
+
+  <script src="assets/products.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var id = params.get('id') || 'e-tisort';
+      var p = ATELIER.byId(id) || ATELIER.byId('e-tisort');
+
+      document.title = p.name + ' — ATELIER';
+
+      // Maskot önerisiyle mi gelindi? → attribution rozeti
+      var fromMascot = params.get('ref') === 'maskot';
+
+      document.getElementById('pdp').innerHTML =
+        '<div class="product-image" style="background:' + p.gradient + '">' +
+          (p.img ? '<img src="' + p.img + '" alt="' + p.name + '">' : p.visual) +
+        '</div>' +
+        '<div class="info">' +
+          (fromMascot ? '<div class="stil-badge">✨ Stil önerdi — kombin tavsiyesiyle geldin</div>' : '') +
+          '<div class="crumb">' + p.catLabel + '</div>' +
+          '<h1>' + p.name + '</h1>' +
+          '<div class="cat">ATELIER Essentials</div>' +
+          '<div class="product-price">' + p.price +
+            (p.old ? ' <span class="old">' + p.old + '</span>' : '') +
+          '</div>' +
+          '<div class="size-selector">' +
+            '<label>Beden</label>' +
+            '<div class="sizes">' +
+              '<button>XS</button><button>S</button><button class="active">M</button><button>L</button><button>XL</button>' +
+            '</div>' +
+          '</div>' +
+          '<button class="add-to-cart" type="button">Sepete Ekle</button>' +
+          '<div class="desc">' + p.desc + '</div>' +
+          '<div class="note">✦ Ücretsiz kargo & 30 gün iade — demo mağaza, sipariş alınmaz.</div>' +
+        '</div>';
+
+      // "Bunlarla Kombinle": bu ürünün kombin eşleri
+      var comboIds = ATELIER.comboFor(p.id).map(function (c) {
+        return c.suggestedProductUrl.split('=')[1];
+      });
+      ATELIER.renderGrid('combo-grid', function (item) {
+        return comboIds.indexOf(item.id) !== -1;
+      });
+
+      // Maskot: bu ürüne özel kombinlerle başlat
+      ATELIER.initMascot({ productId: p.id });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+# --- Runtime verisi (analitik event kayıtları — repo'ya girmez) ---
+server/events.jsonl
+server/*.jsonl
+
+# --- Ortam / gizli bilgiler ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Bağımlılıklar ve derleme çıktıları ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# --- Loglar ---
+*.log
+logs/
+
+# --- İşletim sistemi / editör artıkları ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.idea/
+.vscode/
+
+# --- Geçici dosyalar ---
+tmp/
+*.tmp
+*.bak
+*~

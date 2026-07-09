@@ -1,0 +1,178 @@
+/* ATELIER — görsel odaklı giyim mağazası demo stili */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #14141a;
+  --muted: #6b7280;
+  --line: #e8e6e1;
+  --bg: #faf9f7;
+  --accent: #7c3aed;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* ---------- Nav ---------- */
+nav.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 48px; background: rgba(250, 249, 247, .92);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 100;
+}
+.topbar .logo {
+  font-size: 22px; font-weight: 800; letter-spacing: 4px;
+}
+.topbar .logo em { font-style: normal; color: var(--accent); }
+.topbar .links { display: flex; gap: 32px; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; }
+.topbar .links a { color: #4b5563; padding-bottom: 2px; border-bottom: 2px solid transparent; transition: .2s; }
+.topbar .links a:hover, .topbar .links a.active { color: var(--ink); border-bottom-color: var(--ink); }
+.topbar .icons { display: flex; gap: 18px; font-size: 18px; }
+.topbar .icons span { cursor: pointer; opacity: .8; }
+.topbar .icons span:hover { opacity: 1; }
+
+/* ---------- Hero ---------- */
+.hero {
+  position: relative; overflow: hidden;
+  min-height: 68vh; display: flex; align-items: center; justify-content: center;
+  text-align: center; color: #fff;
+}
+.hero .bg { position: absolute; inset: 0; display: flex; }
+.hero .bg > div { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 120px; }
+.hero .veil { position: absolute; inset: 0; background: rgba(15, 12, 24, .45); }
+.hero .content { position: relative; padding: 40px 24px; }
+.hero h1 { font-size: clamp(36px, 6vw, 64px); font-weight: 800; letter-spacing: 6px; margin-bottom: 14px; }
+.hero p { font-size: 16px; letter-spacing: 2px; opacity: .9; margin-bottom: 28px; }
+.hero .cta {
+  display: inline-block; padding: 14px 36px; border: 1px solid #fff;
+  font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase; transition: .25s;
+}
+.hero .cta:hover { background: #fff; color: var(--ink); }
+
+/* ---------- Bölüm başlıkları ---------- */
+.section { max-width: 1200px; margin: 72px auto; padding: 0 32px; }
+.section-head { text-align: center; margin-bottom: 40px; }
+.section-head h2 { font-size: 26px; letter-spacing: 5px; text-transform: uppercase; font-weight: 700; }
+.section-head p { color: var(--muted); font-size: 14px; margin-top: 8px; letter-spacing: 1px; }
+
+/* ---------- Ürün grid ---------- */
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; }
+.grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+
+.card { cursor: pointer; }
+.card .frame {
+  position: relative; border-radius: 4px; overflow: hidden;
+  aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center;
+  font-size: 96px; transition: .3s;
+}
+.card:hover .frame { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(20, 20, 26, .14); }
+.card .frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card .frame .tag { z-index: 2; }
+.card .frame .tag {
+  position: absolute; top: 12px; left: 12px; background: var(--ink); color: #fff;
+  font-size: 10px; letter-spacing: 1.5px; padding: 5px 10px; text-transform: uppercase;
+}
+.card .meta { padding: 14px 4px 0; }
+.card .meta .name { font-size: 14px; font-weight: 600; }
+.card .meta .cat { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+.card .meta .price { font-size: 14px; font-weight: 700; margin-top: 6px; }
+
+/* ---------- Kategori banner ---------- */
+.cat-banner {
+  min-height: 34vh; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; text-align: center; color: #fff; position: relative; overflow: hidden;
+}
+.cat-banner .veil { position: absolute; inset: 0; background: rgba(15, 12, 24, .4); }
+.cat-banner h1 { position: relative; font-size: 40px; letter-spacing: 8px; font-weight: 800; }
+.cat-banner p { position: relative; margin-top: 10px; letter-spacing: 2px; font-size: 14px; opacity: .92; }
+
+/* ---------- İkili vitrin ---------- */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.split .panel {
+  position: relative; min-height: 380px; border-radius: 4px; overflow: hidden;
+  display: flex; align-items: flex-end; color: #fff; font-size: 100px;
+}
+.split .panel .emoji { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.split .panel .label {
+  position: relative; width: 100%; padding: 24px; font-size: 20px; letter-spacing: 3px;
+  font-weight: 700; background: linear-gradient(transparent, rgba(15, 12, 24, .65));
+}
+.split .panel .label small { display: block; font-size: 12px; font-weight: 400; letter-spacing: 1.5px; margin-top: 4px; opacity: .85; }
+.split .panel:hover .emoji { transform: scale(1.06); transition: .4s; }
+
+/* ---------- Ürün detay ---------- */
+.pdp { max-width: 1150px; margin: 48px auto; padding: 0 32px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 56px; }
+.pdp .product-image {
+  border-radius: 4px; aspect-ratio: 3 / 4; display: flex;
+  align-items: center; justify-content: center; font-size: 190px;
+  position: relative; overflow: hidden;
+}
+.pdp .product-image img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pdp .info .crumb { font-size: 12px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 16px; }
+.stil-badge {
+  display: inline-block; background: #f3eefe; color: var(--accent);
+  font-size: 12px; font-weight: 600; letter-spacing: .5px;
+  border: 1px solid #e2d5fb; border-radius: 999px;
+  padding: 7px 14px; margin-bottom: 16px;
+}
+.pdp .info h1 { font-size: 30px; font-weight: 700; margin-bottom: 6px; }
+.pdp .info .cat { color: var(--muted); font-size: 13px; letter-spacing: 1px; margin-bottom: 20px; }
+.pdp .product-price { font-size: 26px; font-weight: 800; margin-bottom: 28px; }
+.pdp .product-price .old { font-size: 15px; color: #9ca3af; text-decoration: line-through; font-weight: 400; margin-left: 10px; }
+
+.size-selector { margin-bottom: 28px; }
+.size-selector label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; }
+.size-selector .sizes { display: flex; gap: 10px; }
+.size-selector button {
+  width: 50px; height: 50px; border: 1px solid #d6d3cd; background: #fff;
+  font-size: 14px; cursor: pointer; transition: .15s;
+}
+.size-selector button:hover, .size-selector button.active { border-color: var(--ink); background: var(--ink); color: #fff; }
+
+.add-to-cart {
+  width: 100%; padding: 17px; background: var(--ink); color: #fff; border: 0;
+  font-size: 13px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+  cursor: pointer; margin-bottom: 14px; transition: .2s;
+}
+.add-to-cart:hover { background: #2b2b33; }
+
+.pdp .desc { font-size: 14px; line-height: 1.8; color: #4b5563; margin-top: 8px; }
+.pdp .note { margin-top: 18px; font-size: 12px; color: var(--muted); letter-spacing: .5px; }
+
+/* ---------- Lookbook ---------- */
+.look { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.look .shot {
+  border-radius: 4px; overflow: hidden; position: relative;
+  aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center;
+}
+.look .shot .emojis { font-size: 64px; letter-spacing: 8px; }
+.look .shot .cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 18px; color: #fff;
+  background: linear-gradient(transparent, rgba(15, 12, 24, .7));
+  font-size: 14px; font-weight: 600; letter-spacing: 1px;
+}
+.look .shot .cap small { display: block; font-weight: 400; font-size: 11px; opacity: .85; margin-top: 3px; letter-spacing: 1.5px; }
+.look .shot.tall { grid-row: span 2; aspect-ratio: auto; }
+
+/* ---------- Footer ---------- */
+footer {
+  margin-top: 90px; border-top: 1px solid var(--line); padding: 48px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--muted); letter-spacing: 1px;
+}
+footer .flogo { font-weight: 800; letter-spacing: 4px; color: var(--ink); font-size: 15px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  nav.topbar { padding: 14px 20px; }
+  .topbar .links { display: none; }
+  .grid, .grid.cols-3 { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .split, .pdp { grid-template-columns: 1fr; }
+  .look { grid-template-columns: repeat(2, 1fr); }
+  footer { flex-direction: column; gap: 12px; text-align: center; }
+}

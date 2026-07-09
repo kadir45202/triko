@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lookbook — ATELIER</title>
+  <link rel="stylesheet" href="assets/store.css">
+</head>
+<body>
+  <nav class="topbar">
+    <a class="logo" href="index.html">ATELIER<em>.</em></a>
+    <div class="links">
+      <a href="index.html">Anasayfa</a>
+      <a href="kadin.html">Kadın</a>
+      <a href="erkek.html">Erkek</a>
+      <a href="lookbook.html" class="active">Lookbook</a>
+    </div>
+    <div class="icons"><span title="Ara">🔍</span><span title="Favoriler">🤍</span><span title="Sepet">🛒</span></div>
+  </nav>
+
+  <header class="cat-banner" style="background:linear-gradient(150deg,#8b7bb5,#5d4f85)">
+    <div class="veil"></div>
+    <h1>LOOKBOOK</h1>
+    <p>Stil ekibinin elinden — sezonun hazır kombinleri</p>
+  </header>
+
+  <section class="section">
+    <div class="look">
+      <a class="shot tall" href="urun.html?id=k-elbise-midi" style="background:url('assets/img/k-elbise-midi.jpg') center/cover">
+        <div class="cap">Davet Üçlüsü<small>Saten elbise · Stiletto · Mini çanta</small></div>
+      </a>
+      <a class="shot" href="urun.html?id=e-tisort" style="background:url('assets/img/e-tisort.jpg') center/cover">
+        <div class="cap">Monoblock<small>Siyah tişört · Siyah jean</small></div>
+      </a>
+      <a class="shot" href="urun.html?id=e-gomlek" style="background:url('assets/img/e-ceket.jpg') center/cover">
+        <div class="cap">Smart Casual<small>Poplin gömlek · Blazer · Çelik saat</small></div>
+      </a>
+      <a class="shot" href="urun.html?id=k-trenckot" style="background:url('assets/img/k-trenckot.jpg') center/cover">
+        <div class="cap">Paris Sabahı<small>Trençkot · İpek bluz</small></div>
+      </a>
+      <a class="shot" href="urun.html?id=k-hasir-sapka" style="background:url('assets/img/k-hasir-sapka.jpg') center/cover">
+        <div class="cap">Yaz Kaçamağı<small>Hasır şapka · Oversize gözlük</small></div>
+      </a>
+      <a class="shot" href="urun.html?id=e-sneaker" style="background:url('assets/img/e-sneaker.jpg') center/cover">
+        <div class="cap">Hafta Sonu<small>Minimal sneaker · Jean · Şapka</small></div>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    <span class="flogo">ATELIER.</span>
+    <span>Demo mağaza — AI Maskot test ortamı</span>
+    <span>© 2026</span>
+  </footer>
+
+  <script src="assets/products.js"></script>
+  <script>
+    // Lookbook: karışık seçki kombinleriyle maskot
+    ATELIER.initMascot({ productIds: ['k-elbise-midi', 'e-gomlek', 'e-sneaker', 'k-hasir-sapka'] });
+  </script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATELIER — Modern Giyim</title>
+  <link rel="stylesheet" href="assets/store.css">
+</head>
+<body>
+  <nav class="topbar">
+    <a class="logo" href="index.html">ATELIER<em>.</em></a>
+    <div class="links">
+      <a href="index.html" class="active">Anasayfa</a>
+      <a href="kadin.html">Kadın</a>
+      <a href="erkek.html">Erkek</a>
+      <a href="lookbook.html">Lookbook</a>
+    </div>
+    <div class="icons"><span title="Ara">🔍</span><span title="Favoriler">🤍</span><span title="Sepet">🛒</span></div>
+  </nav>
+
+  <header class="hero">
+    <div class="bg">
+      <div style="background:url('assets/img/k-elbise-midi.jpg') center/cover"></div>
+      <div style="background:url('assets/img/k-trenckot.jpg') center/cover"></div>
+      <div style="background:url('assets/img/e-sneaker.jpg') center/cover"></div>
+    </div>
+    <div class="veil"></div>
+    <div class="content">
+      <h1>SEZON AÇILDI</h1>
+      <p>Yeni koleksiyon — stilin sezonu, dolabında başlasın</p>
+      <a class="cta" href="kadin.html">Koleksiyonu Keşfet</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Öne Çıkanlar</h2>
+      <p>Bu hafta en çok kombinlenen parçalar</p>
+    </div>
+    <div class="grid" id="featured-grid"></div>
+  </section>
+
+  <section class="section">
+    <div class="split">
+      <a class="panel" href="kadin.html">
+        <div class="emoji" style="background:url('assets/img/k-canta.jpg') center/cover"></div>
+        <div class="label">KADIN<small>Elbiseden aksesuara sezonun seçkisi</small></div>
+      </a>
+      <a class="panel" href="erkek.html">
+        <div class="emoji" style="background:url('assets/img/e-ceket.jpg') center/cover"></div>
+        <div class="label">ERKEK<small>Basic'ten blazer'a gardırop temelleri</small></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Yeni Gelenler</h2>
+      <p>Rafa yeni çıktı, kombin bekliyor</p>
+    </div>
+    <div class="grid" id="new-grid"></div>
+  </section>
+
+  <footer>
+    <span class="flogo">ATELIER.</span>
+    <span>Demo mağaza — hiçbir şey satılmaz, her şey kombinlenir · AI Maskot test ortamı</span>
+    <span>© 2026</span>
+  </footer>
+
+  <script src="assets/products.js"></script>
+  <script>
+    ATELIER.renderGrid('featured-grid', function (p) {
+      return ['e-tisort', 'k-elbise-midi', 'e-sneaker', 'k-canta'].indexOf(p.id) !== -1;
+    });
+    ATELIER.renderGrid('new-grid', function (p) { return p.tag === 'Yeni' || p.tag === 'Yaz'; }, 4);
+    // Anasayfa: öne çıkan ürünlerin kombinleriyle maskot
+    ATELIER.initMascot({ productIds: ['e-tisort', 'k-elbise-midi'] });
+  </script>
+</body>
+</html>

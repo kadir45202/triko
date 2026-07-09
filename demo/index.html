@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ModaShop — Siyah Basic Tişört | Maskot Widget Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; background: #fff; }
+
+    /* Nav — no-go zone */
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 40px; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; background: #fff; z-index: 100; }
+    nav .logo { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+    nav .links { display: flex; gap: 24px; font-size: 14px; color: #4b5563; }
+    nav .links span { cursor: pointer; }
+
+    .container { max-width: 1100px; margin: 40px auto; padding: 0 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+
+    /* Ürün görseli — no-go zone (.product-image) */
+    .product-image { background: linear-gradient(160deg, #f3f4f6, #e5e7eb); border-radius: 20px; height: 520px; display: flex; align-items: center; justify-content: center; font-size: 140px; }
+
+    .product-info h1 { font-size: 26px; margin-bottom: 8px; }
+    .product-info .brand { color: #6b7280; font-size: 14px; margin-bottom: 16px; }
+
+    /* Fiyat — no-go zone (.product-price) */
+    .product-price { font-size: 28px; font-weight: 800; margin-bottom: 24px; }
+    .product-price .old { font-size: 16px; color: #9ca3af; text-decoration: line-through; font-weight: 400; margin-left: 8px; }
+
+    /* Beden seçici — no-go zone (.size-selector) */
+    .size-selector { margin-bottom: 24px; }
+    .size-selector label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    .size-selector .sizes { display: flex; gap: 8px; }
+    .size-selector button { width: 48px; height: 48px; border: 1px solid #d1d5db; background: #fff; border-radius: 10px; font-size: 14px; cursor: pointer; }
+    .size-selector button:hover, .size-selector button.active { border-color: #111827; background: #111827; color: #fff; }
+
+    /* Sepete ekle — no-go zone (.add-to-cart) */
+    .add-to-cart { width: 100%; padding: 16px; background: #111827; color: #fff; border: 0; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 12px; }
+    .add-to-cart:hover { background: #1f2937; }
+
+    .desc { margin-top: 24px; font-size: 14px; line-height: 1.7; color: #4b5563; }
+
+    .similar { max-width: 1100px; margin: 60px auto 100px; padding: 0 24px; }
+    .similar h2 { font-size: 20px; margin-bottom: 20px; }
+    .similar .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+    .similar .card { border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden; cursor: pointer; }
+    .similar .card .thumb { height: 180px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 56px; }
+    .similar .card .meta { padding: 12px; font-size: 13px; }
+    .similar .card .meta b { display: block; margin-top: 4px; }
+
+    @media (max-width: 768px) {
+      .container { grid-template-columns: 1fr; }
+      .similar .grid { grid-template-columns: repeat(2, 1fr); }
+      nav { padding: 12px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">MODASHOP</div>
+    <div class="links"><span>Kadın</span><span>Erkek</span><span>Yeni Gelenler</span><span>İndirim</span><span>🛒 Sepet (0)</span></div>
+  </nav>
+
+  <div class="container">
+    <div class="product-image">👕</div>
+
+    <div class="product-info">
+      <h1>Siyah Basic Oversize Tişört</h1>
+      <div class="brand">ModaShop Essentials</div>
+      <div class="product-price">₺349 <span class="old">₺499</span></div>
+
+      <div class="size-selector">
+        <label>Beden</label>
+        <div class="sizes">
+          <button>XS</button><button>S</button><button class="active">M</button><button>L</button><button>XL</button>
+        </div>
+      </div>
+
+      <button class="add-to-cart">Sepete Ekle</button>
+
+      <div class="desc">
+        %100 pamuk, oversize kesim basic tişört. Nefes alan kumaşı ve rahat kalıbıyla
+        günlük kombinlerin vazgeçilmezi. 30 derecede tersten yıkayınız.
+      </div>
+    </div>
+  </div>
+
+  <div class="similar">
+    <h2>Benzer Ürünler</h2>
+    <div class="grid">
+      <div class="card"><div class="thumb product-photo">👖</div><div class="meta">Slim Fit Siyah Jean<b>₺459</b></div></div>
+      <div class="card"><div class="thumb product-photo">👟</div><div class="meta">Beyaz Sneaker<b>₺899</b></div></div>
+      <div class="card"><div class="thumb product-photo">🧥</div><div class="meta">Oversize Ceket<b>₺1.299</b></div></div>
+      <div class="card"><div class="thumb product-photo">🧢</div><div class="meta">Basic Şapka<b>₺189</b></div></div>
+    </div>
+  </div>
+
+  <!-- Maskot Widget — tek satır entegrasyon -->
+  <!-- İsteğe bağlı: window.MASKOT_CONFIG ile config override (Sprint 2'de API'dan gelecek) -->
+  <script>
+    window.MASKOT_CONFIG = {
+      behavior: {
+        proactiveDelayMs: 4000,   // demo'da ilk öneri daha hızlı gelsin
+        proactiveIntervalMs: 30000,
+      },
+    };
+  </script>
+  <script src="../widget/widget.js" data-token="demo-token-123" async></script>
+</body>
+</html>
