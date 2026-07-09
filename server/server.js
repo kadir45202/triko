@@ -55,6 +55,7 @@ function serveStatic(req, res, urlPath) {
 var VALID_EVENTS = [
   'mascot_shown', 'combo_shown', 'combo_dismissed',
   'preview_opened', 'product_page_visit', 'combo_add_to_cart', 'mascot_clicked',
+  'recs_shown',
 ];
 
 // Basit rate limit: token başına dakikada 100 event (spec gereği)
@@ -259,6 +260,32 @@ var server = http.createServer(function (req, res) {
     sendJSON(res, 200, {
       mascot: { name: 'Triko', primaryColor: '#7c3aed' },
       behavior: { proactiveDelayMs: 4500, proactiveIntervalMs: 35000 },
+    });
+    return;
+  }
+
+  // AI önerileri: üretim backend'i (4000) çalışıyorsa oraya aktar (Faz 5).
+  // Demo mağaza token'ı ne olursa olsun backend'in seed'li 'demo' müşterisine eşlenir.
+  if (req.method === 'POST' && url === '/api/widget/recommendations') {
+    readBody(req, function (err, body) {
+      if (err || !body) return sendJSON(res, 400, { error: 'invalid_json' });
+      body.token = 'demo';
+      var payload = JSON.stringify(body);
+      var preq = http.request({
+        host: 'localhost', port: 4000, path: '/api/widget/recommendations', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        timeout: 5000,
+      }, function (pres) {
+        var data = '';
+        pres.on('data', function (c) { data += c; });
+        pres.on('end', function () {
+          try { sendJSON(res, pres.statusCode || 200, JSON.parse(data)); }
+          catch (e) { sendJSON(res, 200, { source: 'none', recommendations: [] }); }
+        });
+      });
+      preq.on('error', function () { sendJSON(res, 200, { source: 'none', recommendations: [] }); });
+      preq.on('timeout', function () { preq.destroy(); });
+      preq.end(payload);
     });
     return;
   }
