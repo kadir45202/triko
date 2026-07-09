@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { api } from '@/lib/api';
+import { api, apiUpload } from '@/lib/api';
 import { Card } from '@/components/ui';
 
 export type ComboInput = {
@@ -11,6 +11,8 @@ export type ComboInput = {
   suggestedProductName: string;
   suggestedProductPrice: string;
   suggestedProductUrl: string;
+  suggestedProductImageOriginal: string | null;
+  suggestedProductImageProcessed: string | null;
   mascotText: string;
   socialProof: string | null;
   expertNote: string | null;
@@ -24,6 +26,8 @@ const EMPTY: ComboInput = {
   suggestedProductName: '',
   suggestedProductPrice: '',
   suggestedProductUrl: '',
+  suggestedProductImageOriginal: null,
+  suggestedProductImageProcessed: null,
   mascotText: '',
   socialProof: null,
   expertNote: null,
@@ -102,6 +106,33 @@ export function ComboForm({ comboId, initial }: { comboId?: string; initial?: Pa
         </div>
         <Field label={'Maskot metni (' + form.mascotText.length + '/80)'} hint="Balonda çıkacak kısa mesaj">
           <input required maxLength={80} value={form.mascotText} onChange={(e) => set('mascotText', e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Ürün görseli (opsiyonel)" hint="Yüklenince arkaplan işlenir; maskotun elindeki etikette görünür">
+          <div className="flex items-center gap-3 mt-1">
+            {(form.suggestedProductImageProcessed || form.suggestedProductImageOriginal) && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={form.suggestedProductImageProcessed || form.suggestedProductImageOriginal || ''}
+                alt="Ürün görseli" className="w-12 h-12 rounded-lg object-cover border border-slate-200"
+              />
+            )}
+            <input
+              type="file" accept="image/png,image/jpeg,image/webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setError('');
+                try {
+                  const r = await apiUpload<{ originalUrl: string; processedUrl: string }>('/combos/upload-image', file);
+                  set('suggestedProductImageOriginal', r.originalUrl);
+                  set('suggestedProductImageProcessed', r.processedUrl);
+                } catch (err) {
+                  setError('Görsel yüklenemedi: ' + String((err as Error).message || err));
+                }
+              }}
+              className="text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+            />
+          </div>
         </Field>
         <Field label="Sosyal kanıt (opsiyonel)">
           <input value={form.socialProof || ''} onChange={(e) => set('socialProof', e.target.value || null)}

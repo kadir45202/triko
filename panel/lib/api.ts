@@ -57,3 +57,22 @@ export async function api<T = unknown>(path: string, options: RequestInit = {}):
   }
   return res.json();
 }
+
+// Multipart görsel yükleme — content-type'ı tarayıcı belirler
+export async function apiUpload<T = unknown>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append('file', file);
+  const doFetch = () =>
+    fetch('/api' + path, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem(AT_KEY) || '') },
+      body: form,
+    });
+  let res = await doFetch();
+  if (res.status === 401 && (await tryRefresh())) res = await doFetch();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'upload_failed_' + res.status);
+  }
+  return res.json();
+}

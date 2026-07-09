@@ -1,0 +1,46 @@
+# Triko — üretim benzeri yerel kurulum
+# Kullanım: docker compose up --build
+# Panel: http://localhost:3100  ·  Backend: http://localhost:4000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: triko
+      POSTGRES_PASSWORD: triko
+      POSTGRES_DB: triko
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triko"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Not: PostgreSQL'e geçiş için backend/prisma/schema.prisma başındaki
+      # iki satırlık değişiklik gerekir (provider + noGoSelectors/plan tipleri)
+      DATABASE_URL: postgresql://triko:triko@db:5432/triko
+      JWT_SECRET: degistir-bunu
+      # ANTHROPIC_API_KEY: sk-ant-...   # AI öneri motoru için
+      # REMBG_URL: http://rembg:7000    # arkaplan silme servisi için
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads:/app/uploads
+
+  panel:
+    build: ./panel
+    depends_on:
+      - backend
+    environment:
+      BACKEND_URL: http://backend:4000
+    ports:
+      - "3100:3100"
+
+volumes:
+  pgdata:
+  uploads:

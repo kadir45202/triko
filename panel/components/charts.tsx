@@ -97,6 +97,56 @@ export function HBarList({ rows, color = CHART.primary }: { rows: { label: strin
   );
 }
 
+const DAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+
+// Saatlik dağılım heatmap'i — tek renk tonlu (mor), açık→koyu = az→çok
+export function HourlyHeatmap({ matrix }: { matrix: number[][] }) {
+  const max = Math.max(1, ...matrix.flat());
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-separate" style={{ borderSpacing: 2 }}>
+        <thead>
+          <tr>
+            <th />
+            {Array.from({ length: 24 }, (_, h) => (
+              <th key={h} className="text-[9px] font-normal text-slate-400 pb-1">
+                {h % 4 === 0 ? h : ''}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {matrix.map((row, d) => (
+            <tr key={d}>
+              <td className="text-[10px] text-slate-500 pr-2 text-right">{DAY_LABELS[d]}</td>
+              {row.map((count, h) => (
+                <td key={h}>
+                  <div
+                    className="w-4 h-4 rounded-sm"
+                    title={DAY_LABELS[d] + ' ' + h + ':00 — ' + count + ' tıklama'}
+                    style={{
+                      background: count === 0
+                        ? '#f1f5f9'
+                        : 'rgba(124, 58, 237, ' + (0.15 + 0.85 * (count / max)).toFixed(2) + ')',
+                    }}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex items-center gap-1.5 mt-2 text-[10px] text-slate-400">
+        az
+        {[0.15, 0.35, 0.6, 1].map((o) => (
+          <span key={o} className="w-3 h-3 rounded-sm inline-block" style={{ background: 'rgba(124,58,237,' + o + ')' }} />
+        ))}
+        çok — hücreye gelince gün/saat detayı görünür
+      </div>
+    </div>
+  );
+}
+
 export function DeviceSplit({ devices }: { devices: { device: string; count: number }[] }) {
   const total = devices.reduce((s, d) => s + d.count, 0) || 1;
   const desktop = devices.find((d) => d.device === 'desktop')?.count || 0;

@@ -21,6 +21,8 @@ model Customer {
   token         String    @unique @default(cuid())
   plan          String    @default("STARTER") // STARTER | GROWTH | ENTERPRISE
   planExpiresAt DateTime?
+  // Widget'ın çalışmasına izin verilen domain'ler (JSON dizi; boş = kısıtsız, demo modu)
+  allowedDomains String   @default("[]")
   createdAt     DateTime  @default(now())
 
   mascotSettings MascotSettings?

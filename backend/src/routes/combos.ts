@@ -9,6 +9,7 @@ type ComboBody = {
   suggestedProductPrice?: string;
   suggestedProductUrl?: string;
   suggestedProductImageOriginal?: string | null;
+  suggestedProductImageProcessed?: string | null;
   mascotText?: string;
   socialProof?: string | null;
   expertNote?: string | null;
@@ -49,6 +50,7 @@ export async function comboRoutes(app: FastifyInstance) {
         suggestedProductPrice: b.suggestedProductPrice ?? '',
         suggestedProductUrl: b.suggestedProductUrl ?? '',
         suggestedProductImageOriginal: b.suggestedProductImageOriginal ?? null,
+        suggestedProductImageProcessed: b.suggestedProductImageProcessed ?? null,
         mascotText: b.mascotText,
         socialProof: b.socialProof ?? null,
         expertNote: b.expertNote ?? null,
@@ -85,6 +87,8 @@ export async function comboRoutes(app: FastifyInstance) {
         suggestedProductUrl: b.suggestedProductUrl ?? existing.suggestedProductUrl,
         suggestedProductImageOriginal:
           b.suggestedProductImageOriginal !== undefined ? b.suggestedProductImageOriginal : existing.suggestedProductImageOriginal,
+        suggestedProductImageProcessed:
+          b.suggestedProductImageProcessed !== undefined ? b.suggestedProductImageProcessed : existing.suggestedProductImageProcessed,
         mascotText: b.mascotText ?? existing.mascotText,
         socialProof: b.socialProof !== undefined ? b.socialProof : existing.socialProof,
         expertNote: b.expertNote !== undefined ? b.expertNote : existing.expertNote,

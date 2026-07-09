@@ -91,6 +91,68 @@ export async function analyticsRoutes(app: FastifyInstance) {
     });
   });
 
+  // Saatlik dağılım — heatmap verisi: gün (0=Pzt) × saat (0-23) matrisi
+  app.get('/api/analytics/hourly', async (req) => {
+    const { period, metric } = req.query as { period?: string; metric?: string };
+    const since = periodStart(period);
+    const eventType = metric && /^[a-z][a-z0-9_]{2,39}$/.test(metric) ? metric : 'combo_click';
+
+    const events = await prisma.analyticsEvent.findMany({
+      where: { customerId: req.customerId, eventType, createdAt: { gte: since } },
+      select: { createdAt: true },
+    });
+
+    // 7×24 matris; JS getDay() Pazar=0 → Pazartesi=0'a çevrilir
+    const matrix: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+    for (const e of events) {
+      const day = (e.createdAt.getDay() + 6) % 7;
+      matrix[day][e.createdAt.getHours()] += 1;
+    }
+    return { metric: eventType, matrix };
+  });
+
+  // Tahmini ek gelir: attribution'lı sepete eklemeler × ortalama sepet değeri
+  app.get('/api/analytics/revenue', async (req) => {
+    const { period, avgBasket } = req.query as { period?: string; avgBasket?: string };
+    const since = periodStart(period);
+    const basket = Math.max(0, Number(avgBasket) || 1500);
+
+    const carts = await prisma.analyticsEvent.count({
+      where: { customerId: req.customerId, eventType: 'add_to_cart', createdAt: { gte: since } },
+    });
+    return {
+      period: period || '30d',
+      attributedCarts: carts,
+      avgBasketValue: basket,
+      estimatedRevenue: carts * basket,
+    };
+  });
+
+  // CSV dışa aktarma — ham event listesi
+  app.get('/api/analytics/export.csv', async (req, reply) => {
+    const { period } = req.query as { period?: string };
+    const since = periodStart(period);
+
+    const events = await prisma.analyticsEvent.findMany({
+      where: { customerId: req.customerId, createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      take: 50_000,
+      select: { createdAt: true, eventType: true, comboId: true, sessionId: true, pageUrl: true, deviceType: true },
+    });
+
+    const esc = (v: string | null) => (v === null ? '' : '"' + String(v).replace(/"/g, '""') + '"');
+    const rows = ['createdAt,eventType,comboId,sessionId,pageUrl,deviceType'];
+    for (const e of events) {
+      rows.push([
+        e.createdAt.toISOString(), e.eventType, esc(e.comboId), esc(e.sessionId), esc(e.pageUrl), esc(e.deviceType),
+      ].join(','));
+    }
+    return reply
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header('content-disposition', 'attachment; filename="triko-analytics-' + (period || '30d') + '.csv"')
+      .send(rows.join('\n'));
+  });
+
   // Günlük zaman serisi (varsayılan metrik: combo_show)
   app.get('/api/analytics/timeseries', async (req) => {
     const { period, metric } = req.query as { period?: string; metric?: string };

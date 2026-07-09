@@ -27,10 +27,10 @@ Söz dizimi kontrolü: `npm run check`
 | 2 | Backend "lite" (config + event API, analitik dashboard, statik servis) | ✅ |
 | 2+ | Üretim backend'i (Fastify + Prisma; SQLite ile geliştirme, PostgreSQL'e hazır) | ✅ |
 | 3 | Yönetim Paneli MVP (Next.js 14 + Tailwind) | ✅ |
-| 4 | Görsel Pipeline (S3, rembg, CDN) | ⬜ |
-| 5 | AI Öneri Motoru | ⬜ |
-| 6 | Analitik ve Raporlama (tam sürüm) | ⬜ |
-| 7 | Cila ve Üretim | ⬜ |
+| 4 | Görsel Pipeline (upload + arkaplan silme arayüzü + CDN ucu) | ✅ |
+| 5 | AI Öneri Motoru (claude-haiku-4-5 + kural bazlı fallback) | ✅ |
+| 6 | Analitik ve Raporlama tam sürüm (heatmap, gelir tahmini, CSV, dedup) | ✅ |
+| 7 | Cila ve Üretim (güvenlik, testler, Docker, KVKK/deploy dokümanları) | ✅ |
 
 ## Maskot Yetenekleri
 
@@ -105,6 +105,26 @@ Panel girişi (seed'lenen demo hesabı): **demo@triko.app / triko123** — widge
   (dönem filtresi, en iyi kombinler, cihaz dağılımı, kombin tablosu), kurulum
   kodu + platform kılavuzları (Shopify, WooCommerce, Ticimax, İkas) ve hesap
   sayfaları. API istekleri Next rewrites ile backend'e proxy'lenir.
+
+## Faz 4-7: Üretim Yetenekleri
+
+- **Görsel pipeline (Faz 4):** Panelden maskot/ürün görseli yüklenir
+  (`/api/mascot/upload-image`, `/api/combos/upload-image`); `REMBG_URL`
+  yapılandırıldıysa arkaplan otomatik silinir, yoksa görsel olduğu gibi
+  kullanılır. Yüklemeler `/uploads/` altından cache başlıklarıyla servis
+  edilir; widget dağıtımı için CDN origin ucu: `/cdn/widget.js`.
+- **AI öneri motoru (Faz 5):** Widget, kullanıcının oturumda gezdiği
+  ürünlerden "✨ Bunları da seversin" önerileri gösterir
+  (`POST /api/widget/recommendations`). `ANTHROPIC_API_KEY` tanımlıysa
+  claude-haiku-4-5 ile, değilse kural bazlı motorla üretilir; oturum başına
+  10 dk cache'lenir. Maskota ilk tıklamada öneri balonu açılır.
+- **Tam analitik (Faz 6):** Saatlik tıklama heatmap'i, tahmini ek gelir
+  kartı (sepet × ortalama sepet değeri), CSV dışa aktarma ve event
+  deduplication (aynı oturumda aynı event 30 dk içinde tek sayılır).
+- **Cila ve üretim (Faz 7):** Widget domain kilidi (`allowedDomains` +
+  Origin/Referer doğrulaması), güvenlik başlıkları, 8 testlik backend test
+  paketi (`cd backend && npm test`), Dockerfile'lar + `docker-compose.yml`
+  (PostgreSQL dahil), [KVKK.md](KVKK.md) ve [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Dizin Yapısı
 

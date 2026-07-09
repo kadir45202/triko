@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Card, PageHeader, StatTile } from '@/components/ui';
-import { DeviceSplit, HBarList, LineChart } from '@/components/charts';
+import { DeviceSplit, HBarList, HourlyHeatmap, LineChart } from '@/components/charts';
 
 type Overview = {
   counts: Record<string, number>;
@@ -15,6 +15,8 @@ type ComboRow = {
   shows: number; previews: number; clicks: number; carts: number; conversion: number;
 };
 type Series = { points: { date: string; count: number }[] };
+type Hourly = { matrix: number[][] };
+type Revenue = { attributedCarts: number; avgBasketValue: number; estimatedRevenue: number };
 
 const PERIODS = [
   { key: '7d', label: '7 gün' },
@@ -27,6 +29,8 @@ export default function AnalyticsPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [combos, setCombos] = useState<ComboRow[] | null>(null);
   const [series, setSeries] = useState<Series | null>(null);
+  const [hourly, setHourly] = useState<Hourly | null>(null);
+  const [revenue, setRevenue] = useState<Revenue | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -35,14 +39,32 @@ export default function AnalyticsPage() {
       api<Overview>('/analytics/overview?period=' + period),
       api<ComboRow[]>('/analytics/combos?period=' + period),
       api<Series>('/analytics/timeseries?metric=combo_show&period=' + period),
+      api<Hourly>('/analytics/hourly?period=' + period),
+      api<Revenue>('/analytics/revenue?period=' + period),
     ])
-      .then(([o, c, s]) => {
+      .then(([o, c, s, h, r]) => {
         setOverview(o);
         setCombos(c);
         setSeries(s);
+        setHourly(h);
+        setRevenue(r);
       })
       .catch((e) => setError(String(e.message || e)));
   }, [period]);
+
+  async function exportCsv() {
+    const res = await fetch('/api/analytics/export.csv?period=' + period, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('triko_at') || '') },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'triko-analytics-' + period + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   if (error) return <p className="text-sm text-red-600">Veri alınamadı: {error}</p>;
 
@@ -54,6 +76,11 @@ export default function AnalyticsPage() {
         title="Analitik"
         desc="Maskotun performansı"
         action={
+          <div className="flex items-center gap-3">
+            <button onClick={exportCsv}
+              className="rounded-lg border border-slate-300 text-sm font-medium px-3 py-1.5 text-slate-600 hover:bg-slate-50">
+              ⬇ CSV indir
+            </button>
           <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
             {PERIODS.map((p) => (
               <button key={p.key} onClick={() => setPeriod(p.key)}
@@ -62,17 +89,25 @@ export default function AnalyticsPage() {
               </button>
             ))}
           </div>
+          </div>
         }
       />
       {!overview || !combos || !series ? (
         <p className="text-sm text-slate-400">Yükleniyor…</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <StatTile label="Gösterim" value={(overview.counts['combo_show'] || 0).toLocaleString('tr-TR')} />
             <StatTile label="Önizleme Oranı" value={'%' + overview.rates.previewRate} />
             <StatTile label="Ürüne Geçiş Oranı" value={'%' + overview.rates.clickRate} />
             <StatTile label="Sepet Dönüşümü" value={'%' + overview.rates.cartRate} />
+            {revenue && (
+              <StatTile
+                label="Tahmini Ek Gelir"
+                value={'₺' + revenue.estimatedRevenue.toLocaleString('tr-TR')}
+                sub={revenue.attributedCarts + ' sepet × ₺' + revenue.avgBasketValue.toLocaleString('tr-TR') + ' ort. sepet'}
+              />
+            )}
           </div>
 
           <div className="grid lg:grid-cols-2 gap-4 mb-6">
@@ -88,6 +123,12 @@ export default function AnalyticsPage() {
               </Card>
             </div>
           </div>
+
+          {hourly && (
+            <Card title="Tıklamaların Saate Göre Dağılımı" className="mb-6">
+              <HourlyHeatmap matrix={hourly.matrix} />
+            </Card>
+          )}
 
           <Card title="Kombin Bazlı Performans">
             <table className="w-full text-sm">

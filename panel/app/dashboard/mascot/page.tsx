@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, apiUpload } from '@/lib/api';
 import { Card, PageHeader } from '@/components/ui';
 
 type Settings = {
+  imageUrl: string | null;
   mascotName: string;
   primaryColor: string;
   sizeDesktop: number;
@@ -55,6 +56,32 @@ export default function MascotPage() {
       <form onSubmit={save} className="grid lg:grid-cols-2 gap-4 items-start">
         <div className="space-y-4">
           <Card title="Görünüm" className="space-y-4">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Maskot görseli (PNG önerilir, 200×200)</span>
+              <div className="flex items-center gap-3 mt-1">
+                {s.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={s.imageUrl} alt="Maskot görseli" className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                )}
+                <input
+                  type="file" accept="image/png,image/jpeg,image/webp"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setMsg('Görsel yükleniyor…');
+                    try {
+                      const r = await apiUpload<{ imageUrl: string }>('/mascot/upload-image', file);
+                      set('imageUrl', r.imageUrl);
+                      setMsg('✅ Görsel yüklendi ve işlendi.');
+                    } catch (err) {
+                      setMsg('Hata: ' + String((err as Error).message || err));
+                    }
+                  }}
+                  className="text-sm text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-700 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+                />
+              </div>
+              <span className="text-xs text-slate-400 mt-1 block">Arkaplan silme, REMBG_URL yapılandırıldıysa otomatik uygulanır.</span>
+            </label>
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Maskot adı</span>
               <input value={s.mascotName} maxLength={24} onChange={(e) => set('mascotName', e.target.value)} className={inputCls} />

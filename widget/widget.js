@@ -130,7 +130,7 @@
     var p = loadProfile();
     var now = Date.now();
     p.views = p.views.filter(function (v) { return now - v.ts < 86400000; }).slice(-19);
-    p.views.push({ cat: meta.category || null, color: meta.color || null, price: meta.price || null, ts: now });
+    p.views.push({ id: meta.id || null, name: meta.name || null, cat: meta.category || null, color: meta.color || null, price: meta.price || null, ts: now });
     saveProfile(p);
   }
 
@@ -164,6 +164,100 @@
     for (var i = 0; i < q.length; i++) {
       if (q[i] && q[i][0] === 'productView') addProductView(q[i][1]);
     }
+  }
+
+  // ---------------------------------------------------------------
+  // "Bunları da seversin" — AI öneri motoru (Faz 5). Backend'deki
+  // /api/widget/recommendations ucuna oturum profili + katalog gider;
+  // cevap 10 dk localStorage'da tutulur. Backend/AI yoksa sessizce yok sayılır.
+  // ---------------------------------------------------------------
+  var RECS_KEY = 'maskot_recs';
+
+  function fetchRecommendations() {
+    if (!state.apiBase || !window.fetch) return;
+    var atelier = window.ATELIER;
+    if (!atelier || !atelier.CATALOG) return;
+
+    try {
+      var cached = JSON.parse(window.localStorage.getItem(RECS_KEY) || 'null');
+      if (cached && Date.now() - cached.ts < 600000) { state.recs = cached.items; return; }
+    } catch (e) { /* yoksay */ }
+
+    var views = loadProfile().views.filter(function (v) { return v.id; });
+    if (views.length < 3) return;
+
+    var viewed = views.map(function (v) {
+      return { id: v.id, name: v.name, category: v.cat, color: v.color, price: v.price };
+    });
+    var catalog = atelier.CATALOG.map(function (p) {
+      return { id: p.id, name: p.name, category: p.cat, color: p.color || null, price: p.priceNum || null };
+    });
+
+    fetch(state.apiBase + '/api/widget/recommendations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: CONFIG.token, sessionId: sessionId, viewed: viewed, catalog: catalog }),
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+      if (!data || !data.recommendations || !data.recommendations.length) return;
+      var items = [];
+      for (var i = 0; i < data.recommendations.length; i++) {
+        var rec = data.recommendations[i];
+        var p = atelier.byId(rec.productId);
+        if (p) items.push({ id: p.id, name: p.name, price: p.price, reason: rec.reason });
+      }
+      if (!items.length) return;
+      state.recs = items;
+      try { window.localStorage.setItem(RECS_KEY, JSON.stringify({ ts: Date.now(), items: items })); } catch (e) { /* yoksay */ }
+    }).catch(function () { /* backend kapalı — sorun değil */ });
+  }
+
+  function showRecsBalloon() {
+    state.balloonOpen = true;
+    state.tipOpen = true;
+    state.recsShown = true;
+
+    var opensLeft = currentPos.x > window.innerWidth / 2;
+    balloonEl.classList.remove('maskot-left', 'maskot-right');
+    balloonEl.classList.add(opensLeft ? 'maskot-left' : 'maskot-right');
+    balloonEl.innerHTML = '';
+
+    var label = document.createElement('span');
+    label.className = 'maskot-b-label';
+    label.textContent = '✨ Bunları da seversin';
+    var close = document.createElement('button');
+    close.className = 'maskot-b-close';
+    close.type = 'button';
+    close.setAttribute('aria-label', t('close'));
+    close.textContent = '✕';
+    close.onclick = safely(function (e) {
+      e.stopPropagation();
+      closeBalloon();
+      state.tipOpen = false;
+    });
+    balloonEl.appendChild(close);
+    balloonEl.appendChild(label);
+
+    for (var i = 0; i < state.recs.length; i++) {
+      var rec = state.recs[i];
+      var row = document.createElement('a');
+      row.href = 'urun.html?id=' + encodeURIComponent(rec.id) + '&ref=maskot';
+      row.style.cssText = 'display:block;font-size:12px;line-height:1.5;color:inherit;text-decoration:none;padding:3px 0;border-bottom:1px solid rgba(0,0,0,0.06)';
+      row.innerHTML = '';
+      var nameEl = document.createElement('strong');
+      nameEl.textContent = rec.name;
+      var metaEl = document.createElement('span');
+      metaEl.style.opacity = '0.65';
+      metaEl.textContent = ' ' + (rec.price || '') + (rec.reason ? ' · ' + rec.reason : '');
+      row.appendChild(nameEl);
+      row.appendChild(metaEl);
+      balloonEl.appendChild(row);
+    }
+    balloonEl.classList.add('maskot-open');
+    track('recs_shown');
+
+    later(function () {
+      if (state.tipOpen) { closeBalloon(); state.tipOpen = false; }
+    }, 12000);
   }
 
   // Kişiselleştirilmiş balon satırı — şablon tabanlı, AI yok, sıfır maliyet
@@ -379,6 +473,8 @@
     lastScrollTs: 0,
     tipOpen: false,
     apiBase: null,
+    recs: null,           // "bunları da seversin" önerileri (Faz 5)
+    recsShown: false,
     busy: false,          // dwell yaklaşması gibi öncelikli hareketlerde senaryo bekler
     exitShown: false,
     moveTimer: null,
@@ -1245,6 +1341,12 @@
     bodyEl.classList.add('maskot-jumping');
     later(function () { bodyEl.classList.remove('maskot-jumping'); }, 800);
 
+    // AI önerileri hazırsa ilk tıklamada onları göster, sonrakilerde ipucu
+    if (state.recs && state.recs.length && !state.recsShown) {
+      showRecsBalloon();
+      return;
+    }
+
     // İpucu balonu — kombin balonuyla aynı gövde, sade içerik
     var tip = STYLE_TIPS[Math.floor(Math.random() * STYLE_TIPS.length)];
     state.balloonOpen = true;
@@ -1485,6 +1587,10 @@
 
     // Sayfanın beslediği ürün görüntüleme kuyruğunu işle (oturum profili)
     processQueue();
+
+    // "Bunları da seversin" önerilerini arka planda getir (Faz 5) —
+    // profil yeterliyse ve backend erişilebilirse; hata sessizce yutulur
+    later(safely(fetchRecommendations), 2500);
 
     // Fare takibi + etkileşim/uyanma sinyalleri
     window.addEventListener('mousemove', function (e) {

@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '../lib/prisma';
 import { cacheGet, cacheSet } from '../lib/cache';
 import { rateLimitOk } from '../lib/rateLimit';
+import { ProductLite, recommend } from '../lib/recommend';
+import { originAllowed } from '../lib/domains';
 
 const EVENT_TYPE = /^[a-z][a-z0-9_]{2,39}$/;
 
@@ -29,6 +31,7 @@ export async function widgetRoutes(app: FastifyInstance) {
       include: { mascotSettings: true, combos: { where: { isActive: true }, orderBy: { priority: 'desc' } } },
     });
     if (!customer) return reply.code(404).send({ error: 'not_found' });
+    if (!originAllowed(req, customer.allowedDomains)) return reply.code(403).send({ error: 'domain_not_allowed' });
 
     const s = customer.mascotSettings;
     const combos = customer.combos
@@ -72,6 +75,35 @@ export async function widgetRoutes(app: FastifyInstance) {
     return reply.header('x-cache', 'miss').send(config);
   });
 
+  // "Bunları da seversin" — AI öneri motoru (Faz 5).
+  // Oturum başına 10 dk cache; token başına 20 istek/dk rate limit.
+  app.post('/api/widget/recommendations', async (req, reply) => {
+    const body = (req.body || {}) as {
+      token?: string; sessionId?: string;
+      viewed?: ProductLite[]; catalog?: ProductLite[];
+    };
+    const { token, sessionId } = body;
+    const viewed = Array.isArray(body.viewed) ? body.viewed.slice(0, 20) : [];
+    const catalog = Array.isArray(body.catalog) ? body.catalog.slice(0, 200) : [];
+    if (!token || !sessionId) return reply.code(400).send({ error: 'token_and_sessionId_required' });
+    if (viewed.length < 3 || catalog.length < 4) {
+      return { source: 'none', recommendations: [] }; // profil henüz yetersiz
+    }
+    if (!rateLimitOk('rec:' + token, 20, 60_000)) return reply.code(429).send({ error: 'rate_limited' });
+
+    const customer = await prisma.customer.findUnique({ where: { token }, select: { id: true, allowedDomains: true } });
+    if (!customer) return reply.code(404).send({ error: 'not_found' });
+    if (!originAllowed(req, customer.allowedDomains)) return reply.code(403).send({ error: 'domain_not_allowed' });
+
+    const cacheKey = 'rec:' + token + ':' + sessionId;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return reply.header('x-cache', 'hit').send(JSON.parse(cached));
+
+    const result = await recommend(viewed, catalog);
+    await cacheSet(cacheKey, JSON.stringify(result), 600);
+    return reply.header('x-cache', 'miss').send(result);
+  });
+
   // Analitik event kaydı — token başına 100 istek/dk
   app.post('/api/widget/event', async (req, reply) => {
     const body = (req.body || {}) as {
@@ -87,8 +119,23 @@ export async function widgetRoutes(app: FastifyInstance) {
       return reply.code(429).send({ error: 'rate_limited' });
     }
 
-    const customer = await prisma.customer.findUnique({ where: { token }, select: { id: true } });
+    const customer = await prisma.customer.findUnique({ where: { token }, select: { id: true, allowedDomains: true } });
     if (!customer) return reply.code(404).send({ error: 'not_found' });
+    if (!originAllowed(req, customer.allowedDomains)) return reply.code(403).send({ error: 'domain_not_allowed' });
+
+    // Deduplication: aynı oturumda aynı event + kombin 30 dk içinde tekrar sayılmaz
+    const dupe = await prisma.analyticsEvent.findFirst({
+      where: {
+        customerId: customer.id,
+        sessionId,
+        eventType,
+        comboId: body.comboId || null,
+        pageUrl,
+        createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+      },
+      select: { id: true },
+    });
+    if (dupe) return { ok: true, deduped: true };
 
     await prisma.analyticsEvent.create({
       data: {

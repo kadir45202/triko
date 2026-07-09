@@ -136,6 +136,7 @@
       if (vp) {
         window.MASKOT_Q = window.MASKOT_Q || [];
         window.MASKOT_Q.push(['productView', {
+          id: vp.id, name: vp.name,
           category: vp.cat, color: vp.color || null, price: vp.priceNum || null,
         }]);
       }
