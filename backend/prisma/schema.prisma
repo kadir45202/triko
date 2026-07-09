@@ -1,0 +1,93 @@
+// Triko veri şeması — geliştirmede SQLite, üretimde PostgreSQL.
+// PostgreSQL'e geçiş: provider = "postgresql" yap, aşağıdaki iki SQLite
+// uyarlamasını geri çevir:
+//   - Customer.plan: String  → enum Plan { STARTER GROWTH ENTERPRISE }
+//   - MascotSettings.noGoSelectors: String (JSON) → String[] @default([])
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  companyName   String
+  token         String    @unique @default(cuid())
+  plan          String    @default("STARTER") // STARTER | GROWTH | ENTERPRISE
+  planExpiresAt DateTime?
+  createdAt     DateTime  @default(now())
+
+  mascotSettings MascotSettings?
+  combos         Combo[]
+  events         AnalyticsEvent[]
+}
+
+model MascotSettings {
+  id         String   @id @default(cuid())
+  customerId String   @unique
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  imageUrl     String?
+  primaryColor String  @default("#7c3aed")
+  mascotName   String  @default("Triko")
+  sizeDesktop  Int     @default(68)
+  sizeMobile   Int     @default(52)
+
+  proactiveDelayMs     Int     @default(6000)
+  proactiveIntervalMs  Int     @default(50000)
+  proximityThresholdPx Int     @default(150)
+  maxDailyShows        Int     @default(12)
+  mobileEnabled        Boolean @default(true)
+
+  noGoSelectors String   @default("[]") // JSON dizi — Postgres'te String[]
+  updatedAt     DateTime @updatedAt
+}
+
+model Combo {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  triggerUrlPattern String // regex veya exact URL
+  triggerProductId  String?
+
+  suggestedProductName           String
+  suggestedProductPrice          String
+  suggestedProductUrl            String
+  suggestedProductImageOriginal  String?
+  suggestedProductImageProcessed String?
+
+  mascotText  String
+  socialProof String?
+  expertNote  String?
+
+  priority  Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events AnalyticsEvent[]
+}
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  comboId    String?
+  combo      Combo?   @relation(fields: [comboId], references: [id])
+
+  eventType  String
+  sessionId  String
+  pageUrl    String
+  deviceType String? // 'mobile' | 'desktop'
+  createdAt  DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([comboId, eventType])
+}

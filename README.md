@@ -25,8 +25,8 @@ Söz dizimi kontrolü: `npm run check`
 | 1.5 | Davranışsal kişiselleştirme (oturum profili, akıllı seçim, kişisel metin) | ✅ |
 | 1.9 | Deneyim paketi: amaçlı hareket, etiket illüzyonu, mikro-diyalog, zamanlama | ✅ |
 | 2 | Backend "lite" (config + event API, analitik dashboard, statik servis) | ✅ |
-| 2+ | Üretim backend'i (Fastify + PostgreSQL + Redis + Prisma) | ⬜ |
-| 3 | Yönetim Paneli MVP (Next.js) | ⬜ |
+| 2+ | Üretim backend'i (Fastify + Prisma; SQLite ile geliştirme, PostgreSQL'e hazır) | ✅ |
+| 3 | Yönetim Paneli MVP (Next.js 14 + Tailwind) | ✅ |
 | 4 | Görsel Pipeline (S3, rembg, CDN) | ⬜ |
 | 5 | AI Öneri Motoru | ⬜ |
 | 6 | Analitik ve Raporlama (tam sürüm) | ⬜ |
@@ -75,6 +75,37 @@ Sıfır bağımlılık Node sunucusu (`server/server.js`):
 - `GET  /store|/widget|/demo` — statik dosya servisi (path-traversal korumalı)
 - Backend kapalıysa widget sessizce console-only çalışır (`data-api` opsiyonel)
 
+## Üretim Backend'i (Faz 2+) ve Yönetim Paneli (Faz 3)
+
+Demo dışında, gerçek SaaS altyapısı `backend/` ve `panel/` dizinlerinde:
+
+```bash
+# Backend — Fastify + Prisma (ilk kurulum)
+cd backend
+npm install
+cp .env.example .env
+npx prisma migrate dev      # SQLite veritabanını kurar + seed'ler
+npm run dev                 # http://localhost:4000
+
+# Panel — Next.js 14 (ayrı terminalde)
+cd panel
+npm install
+npm run dev                 # http://localhost:3100
+```
+
+Panel girişi (seed'lenen demo hesabı): **demo@triko.app / triko123** — widget token: `demo`.
+
+- **Backend:** JWT auth (access + refresh), kombin CRUD, maskot ayarları,
+  analitik (overview / kombin bazlı / zaman serisi), widget config (5 dk cache)
+  ve event ucu (token başına 100/dk rate limit). Geliştirmede SQLite; şemadaki
+  iki satır değişikliğiyle PostgreSQL'e geçer (`backend/prisma/schema.prisma`
+  başındaki nota bak). Redis yerine aynı arayüzlü in-memory cache kullanılır.
+- **Panel:** Genel bakış (30 günlük seri + dönüşüm hunisi), kombin liste /
+  oluştur / düzenle / aç-kapa, maskot ayarları (canlı önizlemeli), analitik
+  (dönem filtresi, en iyi kombinler, cihaz dağılımı, kombin tablosu), kurulum
+  kodu + platform kılavuzları (Shopify, WooCommerce, Ticimax, İkas) ve hesap
+  sayfaları. API istekleri Next rewrites ile backend'e proxy'lenir.
+
 ## Dizin Yapısı
 
 ```
@@ -85,6 +116,12 @@ triko/
 │   └── widget.js      # Maskot widget (tek dosya, vanilla JS, bağımlılıksız)
 ├── server/
 │   └── server.js      # Lite backend + statik servis (sıfır bağımlılık)
+├── backend/           # Üretim backend'i — Fastify + Prisma (Faz 2+)
+│   ├── prisma/        # Şema, migration'lar, seed
+│   └── src/           # app + routes (auth, widget, combos, mascot, analytics, account)
+├── panel/             # Yönetim paneli — Next.js 14 + Tailwind (Faz 3)
+│   ├── app/           # login + dashboard sayfaları (App Router)
+│   └── components/    # UI kartları, formlar, SVG grafikler
 ├── demo/
 │   └── index.html     # Tek sayfalık hızlı test sayfası
 └── store/             # ATELIER — 5 sayfalık görsel odaklı demo mağaza
