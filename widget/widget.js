@@ -643,13 +643,28 @@
       '.maskot-w .maskot-shadow{position:absolute;left:50%;bottom:-13px;width:74%;height:11px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(22,16,44,.28),rgba(22,16,44,0) 70%);transform:translateX(-50%);animation:maskot-shadow-bob 2.6s ease-in-out infinite;pointer-events:none;}',
       '@keyframes maskot-shadow-bob{0%,100%{transform:translateX(-50%) scale(1);opacity:1}50%{transform:translateX(-50%) scale(.84);opacity:.75}}',
 
-      // Yürüme: gidiş yönüne eğilir + bob hızlanır (hop hop), varışta iniş esnemesi
+      // Yürüme: gidiş yönüne eğilir + hop döngüsü (zıplaya zıplaya gider), varışta iniş esnemesi
       '.maskot-w .maskot-img{transition:transform .4s ease;}',
-      '.maskot-w .maskot-body.maskot-moving{animation-duration:1s;}',
+      '@keyframes maskot-hopcycle{0%,100%{transform:translateY(0) scale(1,1)}30%{transform:translateY(-9px) scale(1.02,.98)}65%{transform:translateY(-1px) scale(.97,1.04)}}',
+      '.maskot-w .maskot-body.maskot-moving{animation:maskot-hopcycle .5s ease-in-out infinite;}',
       '.maskot-w .maskot-body.maskot-lean-r .maskot-img{transform:rotate(6deg);}',
       '.maskot-w .maskot-body.maskot-lean-l .maskot-img{transform:rotate(-6deg);}',
       '@keyframes maskot-land{0%{transform:scale(1.08,.9)}55%{transform:scale(.96,1.04)}100%{transform:scale(1)}}',
       '.maskot-w .maskot-body.maskot-landing .maskot-img{animation:maskot-land .4s ease-out;}',
+
+      // Konuşma: balon metni yazılırken ağız açılıp kapanır
+      '@keyframes maskot-talk{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}',
+      '.maskot-w .m-mouth-talk{transform-box:fill-box;transform-origin:center;}',
+      '.maskot-w .maskot-body.maskot-talking .m-mouth{opacity:0;}',
+      '.maskot-w .maskot-body.maskot-talking .m-mouth-talk{opacity:1;animation:maskot-talk .26s ease-in-out infinite;}',
+
+      // Ürün görselini inceleme: gözlerle birlikte kafa da hedefe döner
+      '.maskot-w .maskot-body.maskot-look-l .maskot-img{transform:rotate(-4deg);}',
+      '.maskot-w .maskot-body.maskot-look-r .maskot-img{transform:rotate(4deg);}',
+
+      // Boşta gerinme (ara sıra, canlılık hissi)
+      '@keyframes maskot-stretch{0%,100%{transform:scale(1)}35%{transform:scale(.93,1.09) translateY(-3px)}70%{transform:scale(1.05,.95)}}',
+      '.maskot-w .maskot-body.maskot-stretching .maskot-img{animation:maskot-stretch .95s ease-in-out;}',
 
       // Antenler hafifçe salınır
       '.maskot-w .maskot-antennas{transform-box:fill-box;transform-origin:center bottom;animation:maskot-ant 3.2s ease-in-out infinite;}',
@@ -688,7 +703,7 @@
       '.maskot-w .maskot-m-close{position:absolute;top:10px;right:12px;border:0;background:none;font-size:18px;color:#9ca3af;cursor:pointer;padding:4px;}',
 
       // prefers-reduced-motion: tüm animasyon/geçişleri kapat
-      '@media (prefers-reduced-motion:reduce){.maskot-w .maskot-body{animation:none;}.maskot-w .maskot-mover{transition:none;}.maskot-w .maskot-lids{animation:none;}.maskot-w .maskot-pupils{transition:none;}.maskot-w .maskot-body.maskot-waving .maskot-hand-l{animation:none;}.maskot-w .maskot-mini.maskot-open{animation:none;}.maskot-w .maskot-shadow{animation:none;}.maskot-w .maskot-antennas{animation:none;}.maskot-w .maskot-fly{transition:none;}}',
+      '@media (prefers-reduced-motion:reduce){.maskot-w .maskot-body{animation:none;}.maskot-w .maskot-body.maskot-moving{animation:none;}.maskot-w .maskot-body.maskot-talking .m-mouth-talk{animation:none;}.maskot-w .maskot-body.maskot-stretching .maskot-img{animation:none;}.maskot-w .maskot-mover{transition:none;}.maskot-w .maskot-lids{animation:none;}.maskot-w .maskot-pupils{transition:none;}.maskot-w .maskot-body.maskot-waving .maskot-hand-l{animation:none;}.maskot-w .maskot-mini.maskot-open{animation:none;}.maskot-w .maskot-shadow{animation:none;}.maskot-w .maskot-antennas{animation:none;}.maskot-w .maskot-fly{transition:none;}}',
     ].join('\n');
 
     styleEl = document.createElement('style');
@@ -770,6 +785,7 @@
       '<path class="m-mouth m-mouth-excited" d="M28 51 Q38 64 48 51 Z" fill="#fff"/>' +
       '<circle class="m-mouth m-mouth-think" cx="38" cy="55" r="2.6" fill="#fff"/>' +
       '<path class="m-mouth m-mouth-sad" d="M29 57 Q38 49 47 57" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>' +
+      '<ellipse class="m-mouth m-mouth-talk" cx="38" cy="54" rx="5.6" ry="4" fill="#fff"/>' +
 
       '</svg>'
     );
@@ -792,7 +808,7 @@
 
   function updateGaze() {
     if (!pupilsEl || state.destroyed) return;
-    var dx = 0, dy = 0;
+    var dx = 0, dy = 0, looking = 0;
     if (state.frozen) {
       // Modal açık: kullanıcıya (öne) bak
       dx = 0; dy = 0;
@@ -826,9 +842,29 @@
         var mag = Math.sqrt(vx * vx + vy * vy) || 1;
         dx = (vx / mag) * 2.6;
         dy = (vy / mag) * 2.6;
+        // Görsel belirgin şekilde yandaysa kafa da o yöne döner
+        looking = dx > 1.4 ? 1 : dx < -1.4 ? -1 : 0;
       }
     }
     pupilsEl.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px)';
+
+    // Ürün görselini inceleme: kafa dönüşü + ara sıra "hmm" jesti.
+    // Yürürken (lean sınıfları aktif) ve balon açıkken karışmayız.
+    if (bodyEl && !state.balloonOpen && !bodyEl.classList.contains('maskot-moving')) {
+      bodyEl.classList.toggle('maskot-look-r', looking === 1);
+      bodyEl.classList.toggle('maskot-look-l', looking === -1);
+      if (looking && state.expr === 'happy' && Date.now() - (state.lastInspectAt || 0) > 25000) {
+        state.lastInspectAt = Date.now();
+        bodyEl.classList.add('maskot-thinking');
+        setExpression('think');
+        later(function () {
+          bodyEl.classList.remove('maskot-thinking');
+          if (state.expr === 'think') setExpression('happy');
+        }, 1300);
+      }
+    } else if (bodyEl) {
+      bodyEl.classList.remove('maskot-look-l', 'maskot-look-r');
+    }
   }
 
   function startGazeLoop() {
@@ -843,6 +879,16 @@
         setExpression('sleepy');
       } else if (idleMs < 2000 && state.expr === 'sleepy') {
         setExpression('happy');
+      }
+
+      // Boşta gerinme: arada bir (ortalama ~17 sn'de bir) esneyip canlanır
+      if (
+        !state.reducedMotion && !state.balloonOpen && !state.frozen &&
+        state.expr === 'happy' && idleMs > 6000 && Math.random() < 0.04 &&
+        bodyEl && !bodyEl.classList.contains('maskot-moving')
+      ) {
+        bodyEl.classList.add('maskot-stretching');
+        later(function () { bodyEl.classList.remove('maskot-stretching'); }, 1000);
       }
 
       later(loop, 700);
@@ -1239,6 +1285,33 @@
     });
   }
 
+  // Balon metnini harf harf yazar; bu sırada maskot "konuşur" (ağız animasyonu).
+  // reduced-motion'da veya çok kısa metinde anında basılır.
+  var speakTimer = null;
+  function speakText(el, full) {
+    full = full || '';
+    if (speakTimer) {
+      window.clearInterval(speakTimer);
+      speakTimer = null;
+      if (bodyEl) bodyEl.classList.remove('maskot-talking');
+    }
+    if (state.reducedMotion || full.length < 8) { el.textContent = full; return; }
+    var step = Math.max(14, Math.min(40, Math.floor(2200 / full.length))); // toplam ~1-2.2 sn
+    var i = 0;
+    el.textContent = ' '; // yükseklik zıplamasın
+    if (bodyEl) bodyEl.classList.add('maskot-talking');
+    speakTimer = window.setInterval(function () {
+      if (state.destroyed) { window.clearInterval(speakTimer); speakTimer = null; return; }
+      i += 1;
+      el.textContent = full.slice(0, i);
+      if (i >= full.length) {
+        window.clearInterval(speakTimer);
+        speakTimer = null;
+        later(function () { if (bodyEl) bodyEl.classList.remove('maskot-talking'); }, 160);
+      }
+    }, step);
+  }
+
   function renderBalloon(combo) {
     // Balon yönü: maskot ekranın sağındaysa sola açıl
     var opensLeft = currentPos.x > window.innerWidth / 2;
@@ -1253,7 +1326,7 @@
 
     var text = document.createElement('span');
     text.className = 'maskot-b-text';
-    text.textContent = combo.mascotText;
+    speakText(text, combo.mascotText);
 
     var product = document.createElement('div');
     product.className = 'maskot-b-product';
@@ -1318,7 +1391,7 @@
     var textEl = document.createElement('span');
     textEl.className = 'maskot-b-text';
     textEl.style.marginBottom = '0';
-    textEl.textContent = text;
+    speakText(textEl, text);
     var close = document.createElement('button');
     close.className = 'maskot-b-close';
     close.type = 'button';
@@ -1417,7 +1490,7 @@
     label.textContent = '💡 Stil İpucu';
     var text = document.createElement('span');
     text.className = 'maskot-b-text';
-    text.textContent = tip;
+    speakText(text, tip);
     var close = document.createElement('button');
     close.className = 'maskot-b-close';
     close.type = 'button';
@@ -1452,7 +1525,8 @@
   function closeBalloon() {
     balloonEl.classList.remove('maskot-open');
     miniCardEl.classList.remove('maskot-open');
-    bodyEl.classList.remove('maskot-presenting');
+    bodyEl.classList.remove('maskot-presenting', 'maskot-talking');
+    if (speakTimer) { window.clearInterval(speakTimer); speakTimer = null; }
     state.balloonOpen = false;
     setExpression('happy');
     updateGaze();
