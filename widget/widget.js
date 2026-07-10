@@ -167,6 +167,61 @@
   }
 
   // ---------------------------------------------------------------
+  // Katalog ajanı — pasif sinyal. Sayfadaki schema.org/Product JSON-LD
+  // verisini okuyup backend'e bildirir; ajan bilinmeyen ürünü kataloğa
+  // ekler, kategorize eder ve kombinlere dahil eder. Ürün başına oturumda
+  // 1 kez gönderilir; backend yoksa/hata olursa sessizce yok sayılır.
+  // ---------------------------------------------------------------
+  var INGEST_KEY = 'maskot_ingested';
+
+  function readJsonLdProduct() {
+    var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (var i = 0; i < scripts.length; i++) {
+      var parsed;
+      try { parsed = JSON.parse(scripts[i].textContent); } catch (e) { continue; }
+      var nodes = [].concat(parsed && parsed['@graph'] ? parsed['@graph'] : parsed);
+      for (var j = 0; j < nodes.length; j++) {
+        var n = nodes[j];
+        if (!n || !n['@type']) continue;
+        var type = [].concat(n['@type']).join(',').toLowerCase();
+        if (type.indexOf('product') === -1 || !n.name) continue;
+        var offers = n.offers ? [].concat(n.offers)[0] : null;
+        return {
+          id: n.sku || n.productID || null,
+          url: n.url || window.location.href.split('#')[0],
+          name: String(n.name),
+          price: offers && offers.price ? parseFloat(offers.price) : null,
+          currency: (offers && offers.priceCurrency) || 'TRY',
+          image: typeof n.image === 'string' ? n.image : (n.image && n.image[0]) || null,
+          category: n.category || null,
+        };
+      }
+    }
+    return null;
+  }
+
+  function ingestPageProduct() {
+    if (!state.apiBase || !window.fetch) return;
+    var product = readJsonLdProduct();
+    if (!product) return;
+
+    var key = product.id || product.url;
+    var sent = [];
+    try { sent = JSON.parse(window.sessionStorage.getItem(INGEST_KEY) || '[]'); } catch (e) { /* yoksay */ }
+    if (sent.indexOf(key) !== -1) return;
+
+    fetch(state.apiBase + '/api/widget/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: CONFIG.token, product: product }),
+    }).then(function (r) {
+      if (!r.ok) return;
+      sent.push(key);
+      try { window.sessionStorage.setItem(INGEST_KEY, JSON.stringify(sent.slice(-100))); } catch (e) { /* yoksay */ }
+    }).catch(function () { /* backend kapalı — sorun değil */ });
+  }
+
+  // ---------------------------------------------------------------
   // "Bunları da seversin" — AI öneri motoru (Faz 5). Backend'deki
   // /api/widget/recommendations ucuna oturum profili + katalog gider;
   // cevap 10 dk localStorage'da tutulur. Backend/AI yoksa sessizce yok sayılır.
@@ -1591,6 +1646,10 @@
     // "Bunları da seversin" önerilerini arka planda getir (Faz 5) —
     // profil yeterliyse ve backend erişilebilirse; hata sessizce yutulur
     later(safely(fetchRecommendations), 2500);
+
+    // Katalog ajanının pasif sinyali: sayfadaki schema.org/Product
+    // JSON-LD verisini backend'e bildir (ürün başına oturumda 1 kez)
+    later(safely(ingestPageProduct), 1500);
 
     // Fare takibi + etkileşim/uyanma sinyalleri
     window.addEventListener('mousemove', function (e) {

@@ -1,0 +1,253 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { api } from '@/lib/api';
+import { Card, PageHeader } from '@/components/ui';
+
+type Product = {
+  id: string;
+  externalId: string;
+  url: string;
+  name: string;
+  price: number | null;
+  currency: string;
+  imageUrl: string | null;
+  category: string | null;
+  color: string | null;
+  styleTags: string[];
+  season: string | null;
+  enriched: boolean;
+  source: string;
+  status: string;
+};
+
+type Scan = {
+  state: 'running' | 'done' | 'error';
+  step: string;
+  pagesScanned: number;
+  productsFound: number;
+  productsNew: number;
+  combosCreated: number;
+  error?: string;
+} | null;
+
+type AgentEvent = { id: string; type: string; message: string; createdAt: string };
+
+const CATEGORY_LABELS: Record<string, string> = {
+  'ust-giyim': 'Üst Giyim', 'alt-giyim': 'Alt Giyim', 'elbise': 'Elbise',
+  'dis-giyim': 'Dış Giyim', 'ayakkabi': 'Ayakkabı', 'canta': 'Çanta', 'aksesuar': 'Aksesuar',
+};
+
+const EVENT_ICONS: Record<string, string> = {
+  scan_started: '🔍', product_found: '🆕', product_enriched: '🏷️',
+  combo_created: '✨', product_removed: '🗑️', scan_finished: '✅', error: '⚠️',
+};
+
+export default function CatalogPage() {
+  const [siteUrl, setSiteUrl] = useState('');
+  const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
+  const [scan, setScan] = useState<Scan>(null);
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [error, setError] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [status, prods, activity] = await Promise.all([
+        api<{ siteUrl: string | null; scan: Scan }>('/catalog/status'),
+        api<{ products: Product[] }>('/catalog/products'),
+        api<{ events: AgentEvent[] }>('/agent/activity'),
+      ]);
+      setSavedSiteUrl(status.siteUrl);
+      setSiteUrl((cur) => cur || status.siteUrl || '');
+      setScan(status.scan);
+      setProducts(prods.products);
+      setEvents(activity.events);
+      return status.scan;
+    } catch (e) {
+      setError(String((e as Error).message || e));
+      return null;
+    }
+  }, []);
+
+  // Tarama sürerken 2 sn'de bir tazele; bitince durdur
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      const s = await load();
+      if (!s || s.state !== 'running') {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }, 2000);
+  }, [load]);
+
+  useEffect(() => {
+    load().then((s) => { if (s?.state === 'running') startPolling(); });
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [load, startPolling]);
+
+  async function startScan() {
+    setError('');
+    try {
+      await api('/catalog/scan', { method: 'POST', body: JSON.stringify({ siteUrl }) });
+      await load();
+      startPolling();
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    }
+  }
+
+  const running = scan?.state === 'running';
+  const active = (products || []).filter((p) => p.status === 'active');
+
+  return (
+    <>
+      <PageHeader
+        title="Katalog"
+        desc="Triko ajanı sitenizi tarar, ürünleri öğrenir ve kombinleri otomatik kurar"
+      />
+
+      <Card>
+        <div className="flex items-end gap-3 flex-wrap">
+          <label className="flex-1 min-w-[280px] text-sm">
+            <span className="block text-xs font-medium text-slate-500 mb-1">Site adresi</span>
+            <input
+              value={siteUrl}
+              onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="https://magazaniz.com"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"
+            />
+          </label>
+          <button
+            onClick={startScan}
+            disabled={running || !/^https?:\/\//.test(siteUrl)}
+            className="rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2"
+          >
+            {running ? 'Taranıyor…' : savedSiteUrl ? '↻ Yeniden tara' : '🤖 Siteyi tara'}
+          </button>
+        </div>
+        {scan && (
+          <div className="mt-4 flex items-center gap-4 text-sm">
+            <span
+              className={
+                'text-xs font-medium rounded-full px-2.5 py-1 ' +
+                (scan.state === 'running'
+                  ? 'bg-amber-50 text-amber-700'
+                  : scan.state === 'done'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-red-50 text-red-600')
+              }
+            >
+              {scan.state === 'running' ? '● ' + scan.step : scan.state === 'done' ? '✓ Tamamlandı' : '✕ Hata: ' + (scan.error || '')}
+            </span>
+            <span className="text-slate-500 text-xs">
+              {scan.pagesScanned} sayfa · {scan.productsFound} ürün görüldü · {scan.productsNew} yeni · {scan.combosCreated} kombin
+            </span>
+          </div>
+        )}
+        {error && <p className="mt-3 text-sm text-red-600">Hata: {error}</p>}
+        <p className="mt-3 text-xs text-slate-400">
+          Ajan sitemap&apos;inizi bulur, ürün sayfalarındaki schema.org verisini okur, ürünleri
+          kategorize eder ve uyumlu parçalardan kombinler kurup yayınlar. Widget kurulu sayfalarda
+          gezilen yeni ürünler ayrıca anında öğrenilir; kayıtlı site periyodik olarak yeniden taranır.
+        </p>
+      </Card>
+
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Card>
+            <h2 className="text-sm font-semibold mb-3">
+              Keşfedilen ürünler{' '}
+              <span className="font-normal text-slate-400">({active.length} aktif)</span>
+            </h2>
+            {!products ? (
+              <p className="text-sm text-slate-400">Yükleniyor…</p>
+            ) : products.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Henüz ürün yok. Site adresinizi girip taramayı başlatın — gerisini ajan halleder.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                      <th className="pb-2 pr-3">Ürün</th>
+                      <th className="pb-2 pr-3">Kategori</th>
+                      <th className="pb-2 pr-3">Renk</th>
+                      <th className="pb-2 pr-3">Stil</th>
+                      <th className="pb-2 pr-3">Fiyat</th>
+                      <th className="pb-2">Durum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.map((p) => (
+                      <tr key={p.id} className="border-b border-slate-50 last:border-0">
+                        <td className="py-2.5 pr-3 font-medium max-w-[240px]">
+                          <a href={p.url} target="_blank" rel="noreferrer" className="hover:text-brand-600">
+                            {p.name}
+                          </a>
+                          <div className="text-xs text-slate-400 font-normal">
+                            {p.source === 'jsonld' ? 'widget sinyali' : 'site taraması'}
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-3 text-slate-600">
+                          {p.category ? CATEGORY_LABELS[p.category] || p.category : '…'}
+                        </td>
+                        <td className="py-2.5 pr-3 text-slate-600">{p.color || '—'}</td>
+                        <td className="py-2.5 pr-3">
+                          {p.styleTags.map((t) => (
+                            <span key={t} className="inline-block text-[11px] bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 mr-1">
+                              {t}
+                            </span>
+                          ))}
+                        </td>
+                        <td className="py-2.5 pr-3 text-slate-600 whitespace-nowrap">
+                          {p.price != null ? '₺' + p.price.toLocaleString('tr-TR') : '—'}
+                        </td>
+                        <td className="py-2.5">
+                          <span
+                            className={
+                              'text-xs font-medium rounded-full px-2 py-0.5 ' +
+                              (p.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400')
+                            }
+                          >
+                            {p.status === 'active' ? 'aktif' : 'kaldırıldı'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <Card>
+          <h2 className="text-sm font-semibold mb-3">🤖 Ajan aktivitesi</h2>
+          {events.length === 0 ? (
+            <p className="text-sm text-slate-400">Henüz aktivite yok.</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {events.map((ev) => (
+                <li key={ev.id} className="flex gap-2 text-xs leading-relaxed">
+                  <span aria-hidden>{EVENT_ICONS[ev.type] || '•'}</span>
+                  <div>
+                    <div className="text-slate-700">{ev.message}</div>
+                    <div className="text-slate-400">
+                      {new Date(ev.createdAt).toLocaleString('tr-TR', {
+                        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                      })}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </>
+  );
+}

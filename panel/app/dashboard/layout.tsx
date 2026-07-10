@@ -7,6 +7,7 @@ import { clearTokens, hasSession } from '@/lib/api';
 
 const NAV = [
   { href: '/dashboard', label: 'Genel Bakış', icon: '📊' },
+  { href: '/dashboard/catalog', label: 'Katalog', icon: '🤖' },
   { href: '/dashboard/combos', label: 'Kombinler', icon: '👗' },
   { href: '/dashboard/mascot', label: 'Maskot', icon: '🎭' },
   { href: '/dashboard/analytics', label: 'Analitik', icon: '📈' },

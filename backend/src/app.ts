@@ -13,6 +13,7 @@ import { comboRoutes } from './routes/combos';
 import { mascotRoutes } from './routes/mascot';
 import { analyticsRoutes } from './routes/analytics';
 import { accountRoutes } from './routes/account';
+import { catalogRoutes } from './routes/catalog';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -81,6 +82,7 @@ export function buildApp(): FastifyInstance {
   app.register(mascotRoutes);
   app.register(analyticsRoutes);
   app.register(accountRoutes);
+  app.register(catalogRoutes);
 
   return app;
 }

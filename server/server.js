@@ -21,6 +21,9 @@ var path = require('path');
 var PORT = process.env.PORT || 3001;
 var EVENTS_FILE = path.join(__dirname, 'events.jsonl');
 var ROOT = path.join(__dirname, '..'); // repo kökü — statik servis buradan
+// Mağaza kataloğu — sitemap.xml ve ürün sayfalarına basılan JSON-LD
+// (katalog ajanının keşif kaynağı) bu tek veri kaynağından üretilir
+var CATALOG = require('../store/assets/catalog-data.js');
 
 var MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -264,15 +267,21 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  // AI önerileri: üretim backend'i (4000) çalışıyorsa oraya aktar (Faz 5).
-  // Demo mağaza token'ı ne olursa olsun backend'in seed'li 'demo' müşterisine eşlenir.
-  if (req.method === 'POST' && url === '/api/widget/recommendations') {
+  // Üretim backend'ine (4000) proxy: AI önerileri (Faz 5) ve katalog ajanının
+  // pasif ürün sinyali. Demo mağaza token'ı backend'in seed'li 'demo'
+  // müşterisine eşlenir; backend kapalıysa boş/olumsuz yanıtla devam edilir.
+  var PROXY_PATHS = {
+    '/api/widget/recommendations': { source: 'none', recommendations: [] },
+    '/api/widget/ingest': { ok: false },
+  };
+  if (req.method === 'POST' && PROXY_PATHS[url]) {
+    var fallback = PROXY_PATHS[url];
     readBody(req, function (err, body) {
       if (err || !body) return sendJSON(res, 400, { error: 'invalid_json' });
       body.token = 'demo';
       var payload = JSON.stringify(body);
       var preq = http.request({
-        host: 'localhost', port: 4000, path: '/api/widget/recommendations', method: 'POST',
+        host: 'localhost', port: 4000, path: url, method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
         timeout: 5000,
       }, function (pres) {
@@ -280,10 +289,10 @@ var server = http.createServer(function (req, res) {
         pres.on('data', function (c) { data += c; });
         pres.on('end', function () {
           try { sendJSON(res, pres.statusCode || 200, JSON.parse(data)); }
-          catch (e) { sendJSON(res, 200, { source: 'none', recommendations: [] }); }
+          catch (e) { sendJSON(res, 200, fallback); }
         });
       });
-      preq.on('error', function () { sendJSON(res, 200, { source: 'none', recommendations: [] }); });
+      preq.on('error', function () { sendJSON(res, 200, fallback); });
       preq.on('timeout', function () { preq.destroy(); });
       preq.end(payload);
     });
@@ -307,6 +316,53 @@ var server = http.createServer(function (req, res) {
   if (req.method === 'GET' && url === '/') {
     res.writeHead(302, { Location: '/store/' });
     res.end();
+    return;
+  }
+
+  // Katalog ajanının keşif girişleri: robots.txt → sitemap → ürün sayfaları.
+  // Gerçek e-ticaret sitelerinin Google için zaten yayınladığı standartların
+  // demo karşılığı; ajan bu sayede mağazayı "dışarıdan" öğrenebilir.
+  var origin = 'http://' + (req.headers.host || 'localhost:' + PORT);
+  if (req.method === 'GET' && url === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('User-agent: *\nAllow: /\nSitemap: ' + origin + '/store/sitemap.xml\n');
+    return;
+  }
+  if (req.method === 'GET' && url === '/store/sitemap.xml') {
+    var locs = ['/store/', '/store/kadin.html', '/store/erkek.html', '/store/lookbook.html']
+      .concat(CATALOG.map(function (p) { return '/store/urun.html?id=' + p.id; }))
+      .map(function (u) { return '  <url><loc>' + origin + u.replace(/&/g, '&amp;') + '</loc></url>'; });
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+    res.end('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+      locs.join('\n') + '\n</urlset>\n');
+    return;
+  }
+
+  // Ürün sayfası: schema.org/Product JSON-LD'yi sunucu tarafında bas ki
+  // hem tarayıcıdaki widget (pasif sinyal) hem ajan crawler'ı okuyabilsin
+  if (req.method === 'GET' && url.indexOf('/store/urun.html') === 0) {
+    var idMatch = /[?&]id=([^&]+)/.exec(req.url);
+    var prod = null;
+    for (var pi = 0; pi < CATALOG.length; pi++) {
+      if (idMatch && CATALOG[pi].id === decodeURIComponent(idMatch[1])) { prod = CATALOG[pi]; break; }
+    }
+    fs.readFile(path.join(ROOT, 'store', 'urun.html'), 'utf8', function (err, html) {
+      if (err) { sendJSON(res, 404, { error: 'not_found' }); return; }
+      if (prod) {
+        var ld = {
+          '@context': 'https://schema.org', '@type': 'Product',
+          sku: prod.id, name: prod.name, category: prod.catLabel,
+          url: origin + '/store/urun.html?id=' + prod.id,
+          image: prod.img ? origin + '/store/' + prod.img : undefined,
+          offers: { '@type': 'Offer', price: String(prod.priceNum), priceCurrency: 'TRY' },
+        };
+        html = html.replace('</head>',
+          '  <script type="application/ld+json">' + JSON.stringify(ld) + '</script>\n</head>');
+      }
+      cors(res);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    });
     return;
   }
 

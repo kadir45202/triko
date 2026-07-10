@@ -126,6 +126,26 @@ Panel girişi (seed'lenen demo hesabı): **demo@triko.app / triko123** — widge
   paketi (`cd backend && npm test`), Dockerfile'lar + `docker-compose.yml`
   (PostgreSQL dahil), [KVKK.md](KVKK.md) ve [DEPLOYMENT.md](DEPLOYMENT.md).
 
+## Katalog Ajanı (Faz A/B)
+
+Site sahibi ürünleri elle girmez — **Triko ajanı siteyi kendisi öğrenir**:
+
+- **Faz A — İlk keşif:** Panel → Katalog → site adresini gir → "Siteyi tara".
+  Ajan `robots.txt`/`sitemap.xml` üzerinden ürün sayfalarını bulur, her
+  sayfadaki schema.org/Product JSON-LD verisini okur, ürünleri kategorize
+  eder (`ANTHROPIC_API_KEY` varsa claude-haiku-4-5, yoksa kural bazlı) ve
+  uyumlu parçalardan kombinleri **otomatik kurup yayınlar**. İlerleme ve
+  "🤖 ajan aktivitesi" akışı panelde canlı izlenir.
+- **Faz B — Sürekli farkındalık:** İki sinyal birlikte çalışır:
+  widget her sayfada gördüğü JSON-LD ürününü bildirir
+  (`POST /api/widget/ingest`) — yeni ürün ilk ziyaretçide öğrenilir; ayrıca
+  kayıtlı site periyodik yeniden taranır (`AGENT_RESCAN_MS`, varsayılan 6 sa):
+  yeni ürün kataloğa + kombinlere katılır, siteden kalkan ürünün kombinleri
+  otomatik kapatılır.
+- Demo mağaza gerçek bir müşteri sitesi gibi davranır: lite server
+  `/store/sitemap.xml` yayınlar ve ürün sayfalarına JSON-LD basar. Panelde
+  `http://localhost:3001/store/` adresini tarayarak uçtan uca deneyebilirsin.
+
 ## Dizin Yapısı
 
 ```

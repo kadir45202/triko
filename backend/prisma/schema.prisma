@@ -23,11 +23,61 @@ model Customer {
   planExpiresAt DateTime?
   // Widget'ın çalışmasına izin verilen domain'ler (JSON dizi; boş = kısıtsız, demo modu)
   allowedDomains String   @default("[]")
+  // Ajanın periyodik tarama yaptığı site adresi (Faz B aktif sinyal)
+  siteUrl       String?
   createdAt     DateTime  @default(now())
 
   mascotSettings MascotSettings?
   combos         Combo[]
   events         AnalyticsEvent[]
+  products       Product[]
+  agentEvents    AgentEvent[]
+}
+
+// Ajanın keşfettiği ürün kataloğu (Faz A/B).
+// source: jsonld (widget pasif sinyali) | crawl (sitemap taraması) | feed
+// status: active | removed (sitede artık yok — kombinlerden düşürülür)
+model Product {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  externalId String  // sitedeki ürün kimliği (JSON-LD sku/id veya URL'den türetilir)
+  url        String
+  name       String
+  price      Float?
+  currency   String  @default("TRY")
+  imageUrl   String?
+  rawCategory String?
+
+  // AI zenginleştirme çıktıları
+  category  String? // normalize: ust-giyim | alt-giyim | elbise | dis-giyim | ayakkabi | aksesuar | canta
+  color     String?
+  styleTags String  @default("[]") // JSON dizi: casual | ofis | gece | spor | plaj ...
+  season    String? // yaz | kis | mevsimlik
+  enriched  Boolean @default(false)
+
+  source    String   @default("crawl")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, externalId])
+  @@index([customerId, status])
+}
+
+// Ajan aktivite akışı — panelde "🤖 142 ürün keşfedildi..." beslemesi
+model AgentEvent {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  type      String // scan_started | product_found | product_enriched | combo_created | product_removed | scan_finished | error
+  message   String
+  meta      String  @default("{}") // JSON detay
+  createdAt DateTime @default(now())
+
+  @@index([customerId, createdAt])
 }
 
 model MascotSettings {
