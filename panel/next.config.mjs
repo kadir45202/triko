@@ -7,6 +7,12 @@ const nextConfig = {
         source: '/api/:path*',
         destination: (process.env.BACKEND_URL || 'http://localhost:4000') + '/api/:path*',
       },
+      // Yüklenen görseller (maskot/kombin) backend'de durur — önizlemeler
+      // panel origin'inden /uploads/... ile erişebilsin
+      {
+        source: '/uploads/:path*',
+        destination: (process.env.BACKEND_URL || 'http://localhost:4000') + '/uploads/:path*',
+      },
     ];
   },
 };

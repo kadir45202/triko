@@ -258,12 +258,44 @@ var server = http.createServer(function (req, res) {
     return;
   }
 
-  // Widget config (şimdilik statik demo — üretimde müşteri DB'sinden gelecek)
+  // Widget config: üretim backend'i (4000) çalışıyorsa panelde yapılan
+  // ayarlar (maskot görseli, renk, ad, boyut...) oradan gelir; kapalıysa
+  // statik demo config'e düşülür. Token 'demo' müşterisine eşlenir.
   if (req.method === 'GET' && url === '/api/widget/config') {
-    sendJSON(res, 200, {
+    var staticCfg = {
       mascot: { name: 'Triko', primaryColor: '#7c3aed' },
       behavior: { proactiveDelayMs: 4500, proactiveIntervalMs: 35000 },
+    };
+    var pageUrl = /[?&]url=([^&]*)/.exec(req.url);
+    var cfgPath = '/api/widget/config?token=demo' + (pageUrl ? '&url=' + pageUrl[1] : '');
+    var creq = http.get({ host: 'localhost', port: 4000, path: cfgPath, timeout: 700 }, function (cres) {
+      var data = '';
+      cres.on('data', function (c) { data += c; });
+      cres.on('end', function () {
+        try {
+          if (cres.statusCode === 200) return sendJSON(res, 200, JSON.parse(data));
+        } catch (e) { /* düş */ }
+        sendJSON(res, 200, staticCfg);
+      });
     });
+    creq.on('error', function () { sendJSON(res, 200, staticCfg); });
+    creq.on('timeout', function () { creq.destroy(); });
+    return;
+  }
+
+  // Yüklenen görseller backend'de durur; demo origin'inden (/uploads/...)
+  // istenirse 4000'e aktar ki maskot/ürün görselleri mağazada da açılsın
+  if (req.method === 'GET' && url.indexOf('/uploads/') === 0) {
+    var ureq = http.get({ host: 'localhost', port: 4000, path: req.url, timeout: 5000 }, function (ures) {
+      cors(res);
+      res.writeHead(ures.statusCode || 200, {
+        'Content-Type': ures.headers['content-type'] || 'application/octet-stream',
+        'Cache-Control': ures.headers['cache-control'] || 'public, max-age=3600',
+      });
+      ures.pipe(res);
+    });
+    ureq.on('error', function () { sendJSON(res, 404, { error: 'not_found' }); });
+    ureq.on('timeout', function () { ureq.destroy(); });
     return;
   }
 

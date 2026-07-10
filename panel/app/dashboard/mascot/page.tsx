@@ -60,8 +60,25 @@ export default function MascotPage() {
               <span className="text-sm font-medium text-slate-700">Maskot görseli (PNG önerilir, 200×200)</span>
               <div className="flex items-center gap-3 mt-1">
                 {s.imageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={s.imageUrl} alt="Maskot görseli" className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={s.imageUrl} alt="Maskot görseli" className="w-12 h-12 rounded-full object-cover border border-slate-200" />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        set('imageUrl', null);
+                        try {
+                          await api('/mascot/settings', { method: 'PUT', body: JSON.stringify({ imageUrl: null }) });
+                          setMsg('Görsel kaldırıldı — yerleşik animasyonlu maskota dönüldü.');
+                        } catch (err) {
+                          setMsg('Hata: ' + String((err as Error).message || err));
+                        }
+                      }}
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      Kaldır
+                    </button>
+                  </>
                 )}
                 <input
                   type="file" accept="image/png,image/jpeg,image/webp"
@@ -139,17 +156,27 @@ export default function MascotPage() {
             <div className="absolute left-1/2 top-10 -translate-x-1/2 bg-white rounded-2xl shadow px-4 py-2 text-sm text-slate-700">
               Merhaba, ben <strong>{s.mascotName || 'Triko'}</strong>! 👋
             </div>
-            <div
-              className="absolute left-1/2 bottom-10 -translate-x-1/2 rounded-full flex items-center justify-center text-white text-2xl shadow-lg animate-bounce"
-              style={{
-                width: s.sizeDesktop,
-                height: s.sizeDesktop,
-                background: 'linear-gradient(145deg, ' + s.primaryColor + ', #1e1b4b)',
-              }}
-              aria-label="Maskot önizlemesi"
-            >
-              🙂
-            </div>
+            {s.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={s.imageUrl}
+                alt="Maskot önizlemesi"
+                className="absolute left-1/2 bottom-10 -translate-x-1/2 object-contain drop-shadow-lg animate-bounce"
+                style={{ width: s.sizeDesktop, height: s.sizeDesktop }}
+              />
+            ) : (
+              <div
+                className="absolute left-1/2 bottom-10 -translate-x-1/2 rounded-full flex items-center justify-center text-white text-2xl shadow-lg animate-bounce"
+                style={{
+                  width: s.sizeDesktop,
+                  height: s.sizeDesktop,
+                  background: 'linear-gradient(145deg, ' + s.primaryColor + ', #1e1b4b)',
+                }}
+                aria-label="Maskot önizlemesi"
+              >
+                🙂
+              </div>
+            )}
           </div>
           <p className="text-xs text-slate-400 mt-3">
             Önizleme temsili — gerçek maskot, mağazadaki animasyonlu karakterdir.

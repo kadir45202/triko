@@ -1584,8 +1584,49 @@
     var token = (script && script.getAttribute('data-token')) || 'demo';
     state.apiBase = (script && script.getAttribute('data-api')) || null;
 
+    // Backend config şemasını widget şemasına çevir: sizeDesktop/sizeMobile →
+    // mascot.size/behavior.mobileSize, behavior.noGoSelectors → kök,
+    // combos[].product{...} → düz suggestedProduct* alanları. Göreli /uploads
+    // yolları apiBase'e göre mutlaklaştırılır (görsel hangi origin'de
+    // gösterilirse gösterilsin backend'den yüklensin).
+    var absolutize = function (u) {
+      return u && u.charAt(0) === '/' && state.apiBase ? state.apiBase + u : u;
+    };
+    var normalizeApiConfig = function (cfg) {
+      if (!cfg) return cfg;
+      var out = { mascot: {}, behavior: {} };
+      var m = cfg.mascot || {};
+      var b = cfg.behavior || {};
+      for (var mk in m) out.mascot[mk] = m[mk];
+      for (var bk in b) out.behavior[bk] = b[bk];
+      if (m.imageUrl) out.mascot.imageUrl = absolutize(m.imageUrl);
+      if (m.sizeDesktop) out.mascot.size = m.sizeDesktop;
+      if (m.sizeMobile) out.behavior.mobileSize = m.sizeMobile;
+      if (b.noGoSelectors) out.noGoSelectors = b.noGoSelectors;
+      if (cfg.combos) {
+        out.combos = [];
+        for (var i = 0; i < cfg.combos.length; i++) {
+          var c = cfg.combos[i];
+          out.combos.push(c.product ? {
+            id: c.id,
+            suggestedProductName: c.product.name,
+            suggestedProductPrice: c.product.price,
+            suggestedProductUrl: c.product.url,
+            suggestedProductImage: absolutize(c.product.image),
+            mascotText: c.mascotText,
+            socialProof: c.socialProof,
+            expertNote: c.expertNote,
+          } : c);
+        }
+      }
+      return out;
+    };
+
     var applyConfig = function (apiCfg) {
-      CONFIG = mergeConfig(mergeConfig(DEFAULT_CONFIG, apiCfg || null), window.MASKOT_CONFIG || null);
+      CONFIG = mergeConfig(
+        mergeConfig(DEFAULT_CONFIG, normalizeApiConfig(apiCfg || null)),
+        window.MASKOT_CONFIG || null
+      );
       CONFIG.token = token || CONFIG.token;
     };
 
