@@ -33,6 +33,29 @@ type Scan = {
 
 type AgentEvent = { id: string; type: string; message: string; createdAt: string };
 
+type ScanRun = {
+  id: string;
+  trigger: string;
+  state: 'running' | 'done' | 'error';
+  pagesScanned: number;
+  productsFound: number;
+  productsNew: number;
+  productsRemoved: number;
+  combosCreated: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
+type Health = {
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  activeProducts: number;
+  nextScheduledAt: string | null;
+};
+
 const CATEGORY_LABELS: Record<string, string> = {
   'ust-giyim': 'Üst Giyim', 'alt-giyim': 'Alt Giyim', 'elbise': 'Elbise',
   'dis-giyim': 'Dış Giyim', 'ayakkabi': 'Ayakkabı', 'canta': 'Çanta', 'aksesuar': 'Aksesuar',
@@ -43,27 +66,48 @@ const EVENT_ICONS: Record<string, string> = {
   combo_created: '✨', product_removed: '🗑️', scan_finished: '✅', error: '⚠️',
 };
 
+const TRIGGER_LABELS: Record<string, string> = { manual: 'Manuel', scheduled: 'Otomatik' };
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('tr-TR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function fmtDuration(startedAt: string, finishedAt: string | null): string {
+  if (!finishedAt) return '…';
+  const sec = Math.max(0, Math.round((new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000));
+  if (sec < 60) return sec + ' sn';
+  return Math.floor(sec / 60) + ' dk ' + (sec % 60) + ' sn';
+}
+
 export default function CatalogPage() {
   const [siteUrl, setSiteUrl] = useState('');
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
   const [scan, setScan] = useState<Scan>(null);
   const [products, setProducts] = useState<Product[] | null>(null);
   const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [runs, setRuns] = useState<ScanRun[]>([]);
+  const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [status, prods, activity] = await Promise.all([
+      const [status, prods, activity, runData] = await Promise.all([
         api<{ siteUrl: string | null; scan: Scan }>('/catalog/status'),
         api<{ products: Product[] }>('/catalog/products'),
         api<{ events: AgentEvent[] }>('/agent/activity'),
+        api<{ runs: ScanRun[]; health: Health }>('/catalog/runs'),
       ]);
       setSavedSiteUrl(status.siteUrl);
       setSiteUrl((cur) => cur || status.siteUrl || '');
       setScan(status.scan);
       setProducts(prods.products);
       setEvents(activity.events);
+      setRuns(runData.runs);
+      setHealth(runData.health);
       return status.scan;
     } catch (e) {
       setError(String((e as Error).message || e));
@@ -154,6 +198,40 @@ export default function CatalogPage() {
           gezilen yeni ürünler ayrıca anında öğrenilir; kayıtlı site periyodik olarak yeniden taranır.
         </p>
       </Card>
+
+      {/* Kaynak sağlığı — editörün "bugün neden yeni kombin yok" sorusunun cevabı */}
+      {health && (runs.length > 0 || savedSiteUrl) && (
+        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4">
+            <div className="text-xs font-medium text-slate-500">Son başarılı tarama</div>
+            <div className="text-sm font-semibold mt-1">{fmtDateTime(health.lastSuccessAt)}</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-4">
+            <div className="text-xs font-medium text-slate-500">Sonraki otomatik tarama</div>
+            <div className="text-sm font-semibold mt-1">{fmtDateTime(health.nextScheduledAt)}</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-4">
+            <div className="text-xs font-medium text-slate-500">Aktif ürün</div>
+            <div className="text-sm font-semibold mt-1">{health.activeProducts}</div>
+          </div>
+          <div
+            className={
+              'rounded-2xl border p-4 ' +
+              (health.consecutiveFailures > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200')
+            }
+          >
+            <div className="text-xs font-medium text-slate-500">Kaynak durumu</div>
+            <div className={'text-sm font-semibold mt-1 ' + (health.consecutiveFailures > 0 ? 'text-red-600' : 'text-emerald-600')}>
+              {health.consecutiveFailures > 0
+                ? '⚠ ' + health.consecutiveFailures + ' ardışık hata'
+                : '✓ Sağlıklı'}
+            </div>
+            {health.consecutiveFailures > 0 && health.lastError && (
+              <div className="text-xs text-red-500 mt-1 truncate" title={health.lastError}>{health.lastError}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
@@ -248,6 +326,59 @@ export default function CatalogPage() {
           )}
         </Card>
       </div>
+
+      {runs.length > 0 && (
+        <div className="mt-6">
+          <Card>
+            <h2 className="text-sm font-semibold mb-3">Tarama geçmişi</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                    <th className="pb-2 pr-3">Başlangıç</th>
+                    <th className="pb-2 pr-3">Tetikleyici</th>
+                    <th className="pb-2 pr-3">Süre</th>
+                    <th className="pb-2 pr-3">Sayfa</th>
+                    <th className="pb-2 pr-3">Ürün (yeni / kaldırılan)</th>
+                    <th className="pb-2 pr-3">Kombin</th>
+                    <th className="pb-2">Sonuç</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {runs.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 last:border-0">
+                      <td className="py-2.5 pr-3 whitespace-nowrap">{fmtDateTime(r.startedAt)}</td>
+                      <td className="py-2.5 pr-3 text-slate-600">{TRIGGER_LABELS[r.trigger] || r.trigger}</td>
+                      <td className="py-2.5 pr-3 text-slate-600 whitespace-nowrap">{fmtDuration(r.startedAt, r.finishedAt)}</td>
+                      <td className="py-2.5 pr-3 text-slate-600">{r.pagesScanned}</td>
+                      <td className="py-2.5 pr-3 text-slate-600">
+                        {r.productsFound}
+                        <span className="text-xs text-slate-400"> ({r.productsNew} yeni{r.productsRemoved ? ' / ' + r.productsRemoved + ' kaldırıldı' : ''})</span>
+                      </td>
+                      <td className="py-2.5 pr-3 text-slate-600">{r.combosCreated}</td>
+                      <td className="py-2.5">
+                        <span
+                          className={
+                            'text-xs font-medium rounded-full px-2 py-0.5 whitespace-nowrap ' +
+                            (r.state === 'done'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : r.state === 'running'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-red-50 text-red-600')
+                          }
+                          title={r.error || undefined}
+                        >
+                          {r.state === 'done' ? '✓ Başarılı' : r.state === 'running' ? '● Sürüyor' : '✕ ' + (r.error || 'Hata')}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
     </>
   );
 }

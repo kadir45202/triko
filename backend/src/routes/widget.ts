@@ -28,7 +28,11 @@ export async function widgetRoutes(app: FastifyInstance) {
 
     const customer = await prisma.customer.findUnique({
       where: { token },
-      include: { mascotSettings: true, combos: { where: { isActive: true }, orderBy: { priority: 'desc' } } },
+      include: {
+        mascotSettings: true,
+        // Onay bekleyen (pending) ajan kombinleri widget'a asla çıkmaz
+        combos: { where: { isActive: true, status: 'published' }, orderBy: { priority: 'desc' } },
+      },
     });
     if (!customer) return reply.code(404).send({ error: 'not_found' });
     if (!originAllowed(req, customer.allowedDomains)) return reply.code(403).send({ error: 'domain_not_allowed' });

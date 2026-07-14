@@ -31,9 +31,63 @@ export async function catalogRoutes(app: FastifyInstance) {
   app.get('/api/catalog/status', { preHandler: app.authGuard }, async (req) => {
     const customer = await prisma.customer.findUnique({
       where: { id: req.customerId },
-      select: { siteUrl: true },
+      select: { siteUrl: true, autoPublishCombos: true },
     });
-    return { siteUrl: customer?.siteUrl ?? null, scan: getScanStatus(req.customerId) };
+    return {
+      siteUrl: customer?.siteUrl ?? null,
+      autoPublishCombos: customer?.autoPublishCombos ?? true,
+      scan: getScanStatus(req.customerId),
+    };
+  });
+
+  // Ajan ayarı: yeni kombinler otomatik mi yayınlansın, onay kuyruğuna mı düşsün
+  app.put('/api/catalog/settings', { preHandler: app.authGuard }, async (req, reply) => {
+    const { autoPublishCombos } = (req.body || {}) as { autoPublishCombos?: unknown };
+    if (typeof autoPublishCombos !== 'boolean') {
+      return reply.code(400).send({ error: 'autoPublishCombos_boolean_required' });
+    }
+    await prisma.customer.update({
+      where: { id: req.customerId },
+      data: { autoPublishCombos },
+    });
+    return { ok: true, autoPublishCombos };
+  });
+
+  // Tarama geçmişi + kaynak sağlığı (Katalog panosu)
+  app.get('/api/catalog/runs', { preHandler: app.authGuard }, async (req) => {
+    const runs = await prisma.scanRun.findMany({
+      where: { customerId: req.customerId },
+      orderBy: { startedAt: 'desc' },
+      take: 20,
+    });
+
+    const lastSuccess = runs.find((r) => r.state === 'done');
+    let consecutiveFailures = 0;
+    for (const r of runs) {
+      if (r.state === 'error') consecutiveFailures++;
+      else break;
+    }
+    const rescanMs = Number(process.env.AGENT_RESCAN_MS || 6 * 60 * 60 * 1000);
+    const lastFinished = runs.find((r) => r.state !== 'running');
+    const activeProducts = await prisma.product.count({
+      where: { customerId: req.customerId, status: 'active' },
+    });
+
+    return {
+      runs,
+      health: {
+        lastSuccessAt: lastSuccess?.finishedAt ?? null,
+        lastErrorAt: runs.find((r) => r.state === 'error')?.finishedAt ?? null,
+        lastError: runs.find((r) => r.state === 'error')?.error ?? null,
+        consecutiveFailures,
+        activeProducts,
+        // periyodik fark taraması kapalıysa null
+        nextScheduledAt:
+          rescanMs > 0 && lastFinished?.finishedAt
+            ? new Date(lastFinished.finishedAt.getTime() + rescanMs).toISOString()
+            : null,
+      },
+    };
   });
 
   app.get('/api/catalog/products', { preHandler: app.authGuard }, async (req) => {

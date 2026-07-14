@@ -31,6 +31,7 @@ Söz dizimi kontrolü: `npm run check`
 | 5 | AI Öneri Motoru (claude-haiku-4-5 + kural bazlı fallback) | ✅ |
 | 6 | Analitik ve Raporlama tam sürüm (heatmap, gelir tahmini, CSV, dedup) | ✅ |
 | 7 | Cila ve Üretim (güvenlik, testler, Docker, KVKK/deploy dokümanları) | ✅ |
+| 8 | Editör güveni: Onay Kuyruğu (önizleme + toplu onay), tarama geçmişi, kaynak sağlığı | ✅ |
 
 ## Maskot Yetenekleri
 
@@ -145,6 +146,25 @@ Site sahibi ürünleri elle girmez — **Triko ajanı siteyi kendisi öğrenir**
 - Demo mağaza gerçek bir müşteri sitesi gibi davranır: lite server
   `/store/sitemap.xml` yayınlar ve ürün sayfalarına JSON-LD basar. Panelde
   `http://localhost:3001/store/` adresini tarayarak uçtan uca deneyebilirsin.
+
+## Editör Güveni ve Denetim (Faz 8)
+
+Ajan onlarca kombin üretebildiği için editörün kör onay vermemesi gerekir:
+
+- **Onay Kuyruğu** (Panel → Onay Kuyruğu): "Yayınlamadan önce onayımı iste"
+  açıksa ajanın kurduğu kombinler `pending` düşer ve widget'a çıkmaz. Editör
+  kombini **mağaza sahnesi önizlemesiyle** (maskot balonu + elden sarkan ürün
+  etiketi, gerçek maskot ayarlarıyla) görür; tek tek ya da çoklu seçimle
+  **toplu yayınla / toplu sil** yapar. Sidebar'da bekleyen sayısı rozeti.
+- **Tarama geçmişi** (Katalog): her koşu kalıcı kayıt — tetikleyici
+  (manuel/otomatik), süre, sayfa/ürün/kombin sayıları, hata mesajı.
+- **Kaynak sağlığı** (Katalog): son başarılı tarama, sonraki otomatik tarama,
+  aktif ürün sayısı, ardışık hata uyarısı.
+- **Kombinler sayfası**: arama, durum filtresi (aktif/pasif/onay bekleyen),
+  kaynak etiketi (🤖 ajan / ✍️ manuel), toplu aktifleştir/pasifleştir/sil,
+  her satırda önizleme.
+- API: `POST /api/combos/bulk`, `GET /api/combos/pending-count`,
+  `GET /api/catalog/runs`, `PUT /api/catalog/settings`.
 
 ## Dizin Yapısı
 

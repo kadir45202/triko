@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { clearTokens, hasSession } from '@/lib/api';
+import { api, clearTokens, hasSession } from '@/lib/api';
 
 const NAV = [
   { href: '/dashboard', label: 'Genel Bakış', icon: '📊' },
   { href: '/dashboard/catalog', label: 'Katalog', icon: '🤖' },
+  { href: '/dashboard/queue', label: 'Onay Kuyruğu', icon: '✅' },
   { href: '/dashboard/combos', label: 'Kombinler', icon: '👗' },
   { href: '/dashboard/mascot', label: 'Maskot', icon: '🎭' },
   { href: '/dashboard/analytics', label: 'Analitik', icon: '📈' },
@@ -19,11 +20,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     if (!hasSession()) router.replace('/login');
     else setReady(true);
   }, [router]);
+
+  // Onay bekleyen kombin rozeti — sayfa geçişlerinde tazelenir
+  useEffect(() => {
+    if (!ready) return;
+    api<{ count: number }>('/combos/pending-count')
+      .then((r) => setPendingCount(r.count))
+      .catch(() => {});
+  }, [ready, pathname]);
 
   if (!ready) return null;
 
@@ -47,6 +57,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 }
               >
                 <span aria-hidden>{item.icon}</span> {item.label}
+                {item.href === '/dashboard/queue' && pendingCount > 0 && (
+                  <span className="ml-auto text-[11px] font-semibold bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
+                    {pendingCount}
+                  </span>
+                )}
               </Link>
             );
           })}

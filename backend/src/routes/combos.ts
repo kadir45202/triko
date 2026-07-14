@@ -27,11 +27,75 @@ export async function comboRoutes(app: FastifyInstance) {
     if (req.url.startsWith('/api/combos')) await app.authGuard(req, reply);
   });
 
+  // ?status=pending|published ile filtrelenebilir (Onay Kuyruğu pending'i çeker)
   app.get('/api/combos', async (req) => {
+    const { status } = req.query as { status?: string };
     return prisma.combo.findMany({
-      where: { customerId: req.customerId },
+      where: {
+        customerId: req.customerId,
+        ...(status === 'pending' || status === 'published' ? { status } : {}),
+      },
       orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     });
+  });
+
+  // Sidebar rozeti: onay bekleyen kombin sayısı
+  app.get('/api/combos/pending-count', async (req) => {
+    const count = await prisma.combo.count({
+      where: { customerId: req.customerId, status: 'pending' },
+    });
+    return { count };
+  });
+
+  // Toplu işlem — Onay Kuyruğu ve Kombinler sayfasındaki çoklu seçim.
+  // publish: pending → published (widget'a çıkar); delete: analitiğiyle siler.
+  app.post('/api/combos/bulk', async (req, reply) => {
+    const b = (req.body || {}) as { action?: string; ids?: unknown };
+    const ids = Array.isArray(b.ids) ? b.ids.filter((x): x is string => typeof x === 'string').slice(0, 200) : [];
+    const action = b.action;
+    if (!ids.length || !action) return reply.code(400).send({ error: 'action_and_ids_required' });
+    if (!['publish', 'activate', 'deactivate', 'delete'].includes(action)) {
+      return reply.code(400).send({ error: 'invalid_action' });
+    }
+
+    // Sadece bu müşteriye ait id'ler işlenir (kiracı izolasyonu)
+    const owned = await prisma.combo.findMany({
+      where: { id: { in: ids }, customerId: req.customerId },
+      select: { id: true },
+    });
+    const ownedIds = owned.map((c) => c.id);
+    if (!ownedIds.length) return { ok: true, affected: 0 };
+
+    let affected = 0;
+    switch (action) {
+      case 'publish': {
+        const r = await prisma.combo.updateMany({
+          where: { id: { in: ownedIds } },
+          data: { status: 'published', isActive: true },
+        });
+        affected = r.count;
+        break;
+      }
+      case 'activate':
+      case 'deactivate': {
+        const r = await prisma.combo.updateMany({
+          where: { id: { in: ownedIds } },
+          data: { isActive: action === 'activate' },
+        });
+        affected = r.count;
+        break;
+      }
+      case 'delete': {
+        await prisma.analyticsEvent.deleteMany({ where: { comboId: { in: ownedIds } } });
+        const r = await prisma.combo.deleteMany({ where: { id: { in: ownedIds } } });
+        affected = r.count;
+        break;
+      }
+      default:
+        return reply.code(400).send({ error: 'invalid_action' });
+    }
+    await invalidateWidgetCache(req.customerId);
+    return { ok: true, affected };
   });
 
   app.post('/api/combos', async (req, reply) => {

@@ -22,6 +22,9 @@ before(async () => {
   await prisma.analyticsEvent.deleteMany({});
   await prisma.combo.deleteMany({});
   await prisma.mascotSettings.deleteMany({});
+  await prisma.scanRun.deleteMany({});
+  await prisma.agentEvent.deleteMany({});
+  await prisma.product.deleteMany({});
   await prisma.customer.deleteMany({});
 
   await prisma.customer.create({

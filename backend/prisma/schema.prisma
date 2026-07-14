@@ -25,6 +25,8 @@ model Customer {
   allowedDomains String   @default("[]")
   // Ajanın periyodik tarama yaptığı site adresi (Faz B aktif sinyal)
   siteUrl       String?
+  // false → ajan kombinleri "pending" oluşturur, editör Onay Kuyruğu'ndan yayınlar
+  autoPublishCombos Boolean @default(true)
   createdAt     DateTime  @default(now())
 
   mascotSettings MascotSettings?
@@ -32,6 +34,7 @@ model Customer {
   events         AnalyticsEvent[]
   products       Product[]
   agentEvents    AgentEvent[]
+  scanRuns       ScanRun[]
 }
 
 // Ajanın keşfettiği ürün kataloğu (Faz A/B).
@@ -121,10 +124,40 @@ model Combo {
 
   priority  Int      @default(0)
   isActive  Boolean  @default(true)
+  // pending: ajan kurdu, editör onayı bekliyor (widget'a çıkmaz) | published: yayında
+  status    String   @default("published")
+  // manual: panelden elle | agent: katalog ajanı kurdu
+  source    String   @default("manual")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   events AnalyticsEvent[]
+
+  @@index([customerId, status])
+}
+
+// Ajan tarama koşusu — Katalog'daki "Tarama geçmişi" tablosu ve kaynak sağlığı
+// trigger: manual (panelden) | scheduled (periyodik fark taraması)
+// state: running | done | error
+model ScanRun {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  siteUrl         String
+  trigger         String @default("manual")
+  state           String @default("running")
+  pagesScanned    Int    @default(0)
+  productsFound   Int    @default(0)
+  productsNew     Int    @default(0)
+  productsRemoved Int    @default(0)
+  combosCreated   Int    @default(0)
+  error           String?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([customerId, startedAt])
 }
 
 model AnalyticsEvent {

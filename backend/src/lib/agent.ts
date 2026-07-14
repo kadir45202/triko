@@ -325,8 +325,15 @@ function formatPrice(price: number | null, currency: string | null): string {
 }
 
 // Plan → Combo satırları. Var olan (aynı base ürün + aynı önerilen URL) kombinler atlanır.
+// autoPublishCombos kapalıysa kombinler "pending" düşer: widget'a çıkmaz,
+// editör Onay Kuyruğu'ndan önizleyip yayınlar.
 export async function materializeCombos(customerId: string, plans: ComboPlan[]): Promise<number> {
   if (!plans.length) return 0;
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { autoPublishCombos: true },
+  });
+  const autoPublish = customer?.autoPublishCombos ?? true;
   const products = await prisma.product.findMany({ where: { customerId } });
   const byId = new Map(products.map((p) => [p.id, p]));
   const existing = await prisma.combo.findMany({
@@ -360,13 +367,20 @@ export async function materializeCombos(customerId: string, plans: ComboPlan[]):
         mascotText: String(plan.text).slice(0, 120),
         expertNote: 'Triko ajanı otomatik oluşturdu',
         priority: 0,
+        status: autoPublish ? 'published' : 'pending',
+        source: 'agent',
       },
     });
     created++;
   }
   if (created) {
-    await logAgent(customerId, 'combo_created', created + ' yeni kombin oluşturuldu ve yayınlandı', { count: created });
-    await invalidateWidgetCache(customerId);
+    await logAgent(
+      customerId,
+      'combo_created',
+      created + (autoPublish ? ' yeni kombin oluşturuldu ve yayınlandı' : ' yeni kombin onay kuyruğuna eklendi'),
+      { count: created, autoPublish },
+    );
+    if (autoPublish) await invalidateWidgetCache(customerId);
   }
   return created;
 }
@@ -448,7 +462,11 @@ export async function handleNewProduct(customerId: string): Promise<void> {
 
 // ---------- Faz A: tam site taraması ----------
 
-export async function runScan(customerId: string, siteUrl: string): Promise<void> {
+export async function runScan(
+  customerId: string,
+  siteUrl: string,
+  trigger: 'manual' | 'scheduled' = 'manual',
+): Promise<void> {
   if (isScanRunning(customerId)) return;
   const status: ScanStatus = {
     state: 'running',
@@ -460,7 +478,11 @@ export async function runScan(customerId: string, siteUrl: string): Promise<void
     startedAt: new Date().toISOString(),
   };
   scanJobs.set(customerId, status);
-  await logAgent(customerId, 'scan_started', 'Site taraması başladı: ' + siteUrl, { siteUrl });
+  const run = await prisma.scanRun.create({
+    data: { customerId, siteUrl, trigger },
+  });
+  let productsRemoved = 0;
+  await logAgent(customerId, 'scan_started', 'Site taraması başladı: ' + siteUrl, { siteUrl, trigger });
 
   try {
     const urls = await discoverPageUrls(siteUrl);
@@ -486,6 +508,7 @@ export async function runScan(customerId: string, siteUrl: string): Promise<void
       });
       for (const p of gone) {
         await prisma.product.update({ where: { id: p.id }, data: { status: 'removed' } });
+        productsRemoved++;
         const closed = await prisma.combo.updateMany({
           where: { customerId, isActive: true, OR: [{ suggestedProductUrl: p.url }, { triggerProductId: p.externalId }] },
           data: { isActive: false },
@@ -506,6 +529,18 @@ export async function runScan(customerId: string, siteUrl: string): Promise<void
     status.state = 'done';
     status.step = 'Tamamlandı';
     status.finishedAt = new Date().toISOString();
+    await prisma.scanRun.update({
+      where: { id: run.id },
+      data: {
+        state: 'done',
+        pagesScanned: status.pagesScanned,
+        productsFound: status.productsFound,
+        productsNew: status.productsNew,
+        productsRemoved,
+        combosCreated: status.combosCreated,
+        finishedAt: new Date(),
+      },
+    });
     await logAgent(
       customerId,
       'scan_finished',
@@ -516,6 +551,21 @@ export async function runScan(customerId: string, siteUrl: string): Promise<void
     status.state = 'error';
     status.error = err instanceof Error ? err.message : 'unknown';
     status.finishedAt = new Date().toISOString();
+    await prisma.scanRun
+      .update({
+        where: { id: run.id },
+        data: {
+          state: 'error',
+          error: status.error,
+          pagesScanned: status.pagesScanned,
+          productsFound: status.productsFound,
+          productsNew: status.productsNew,
+          productsRemoved,
+          combosCreated: status.combosCreated,
+          finishedAt: new Date(),
+        },
+      })
+      .catch(() => {});
     await logAgent(customerId, 'error', 'Tarama hatası: ' + status.error, {});
   }
 }
@@ -527,6 +577,6 @@ export async function rescanAll(): Promise<void> {
     select: { id: true, siteUrl: true },
   });
   for (const c of customers) {
-    if (c.siteUrl && !isScanRunning(c.id)) await runScan(c.id, c.siteUrl);
+    if (c.siteUrl && !isScanRunning(c.id)) await runScan(c.id, c.siteUrl, 'scheduled');
   }
 }
