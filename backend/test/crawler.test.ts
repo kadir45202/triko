@@ -22,6 +22,9 @@ test('classifyUrl: ürün/kategori/diğer kalıpları', () => {
   assert.equal(classifyUrl('https://a.com/p/12345'), 'product');
   assert.equal(classifyUrl('https://a.com/elbise-p-98765'), 'product');
   assert.equal(classifyUrl('https://a.com/detay?id=x-1'), 'product');
+  assert.equal(classifyUrl('https://a.com/pamuklu-midi-etek-beyaz-4173105'), 'product'); // Koton/Akinon tarzı
+  assert.equal(classifyUrl('https://a.com/pamuklu-midi-etek-beyaz-4173105/'), 'product');
+  assert.equal(classifyUrl('https://a.com/kampanya-2026'), 'other'); // kısa rakam ürün değil
   assert.equal(classifyUrl('https://a.com/kategori/elbise'), 'listing');
   assert.equal(classifyUrl('https://a.com/kadin'), 'listing');
   assert.equal(classifyUrl('https://a.com/liste?page=3'), 'listing');

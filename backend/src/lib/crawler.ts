@@ -431,7 +431,10 @@ export type UrlKind = 'product' | 'listing' | 'other';
 // URL kalıbından sayfa türü tahmini — kuyruk önceliği için (kesin hüküm değil,
 // her sayfada yine de çok sinyalli çıkarım denenir)
 export function classifyUrl(url: string): UrlKind {
-  if (/(\/urun|\/product|\/prod\b|\/p\/|\/prd|\/item|\/dp\/|-p-\d+|[?&](id|sku|pid|product_id|urun)=)/i.test(url)) {
+  // "-p-123" (Trendyol tarzı) yanında "slug-4173105" (Koton/Akinon tarzı,
+  // sonu 5+ haneli ürün koduyla biten) kalıbı da ürün sayılır
+  if (/(\/urun|\/product|\/prod\b|\/p\/|\/prd|\/item|\/dp\/|-p-\d+|[?&](id|sku|pid|product_id|urun)=)/i.test(url) ||
+      /-\d{5,}\/?(\?|$)/.test(url)) {
     return 'product';
   }
   if (/(kategori|category|collection|koleksiyon|\/c\/|\/k\/|\/liste|[?&](page|sayfa|pg)=|\/(kadin|erkek|cocuk|indirim|sale|outlet|yeni|new)\b)/i.test(url)) {
