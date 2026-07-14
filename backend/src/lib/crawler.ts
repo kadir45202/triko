@@ -1,7 +1,9 @@
 // Site keşif katmanı (Faz A) — deterministik kısım.
-// robots.txt → sitemap → ürün sayfaları; sayfalardaki schema.org/Product
-// JSON-LD verisini çıkarır. Anlama gerektiren işler (JSON-LD'siz sayfadan
-// ürün çıkarma, zenginleştirme, kombinleme) agent.ts'te Claude'a gider.
+// İki keşif kanalı birlikte çalışır: (1) robots.txt → sitemap tohumları,
+// (2) sayfa içi link takibi (BFS) — sitemap'te ürünler tek tek listelenmese
+// bile kategori sayfalarındaki linklerden ürün sayfalarına ulaşılır.
+// Ürün verisi üç sinyalden okunur: JSON-LD → mikrodata → OpenGraph.
+// Anlama gerektiren işler (zenginleştirme, kombinleme) agent.ts'te Claude'a gider.
 
 export type RawProduct = {
   externalId: string;
@@ -16,6 +18,8 @@ export type RawProduct = {
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_BODY_BYTES = 900_000;
 export const MAX_PAGES = Number(process.env.AGENT_MAX_PAGES || 120);
+const MAX_DEPTH = Number(process.env.AGENT_MAX_DEPTH || 3);
+const MAX_QUEUE = 2_000; // keşfedilen link kuyruğu üst sınırı (bellek koruması)
 const CRAWL_DELAY_MS = Number(process.env.AGENT_CRAWL_DELAY_MS || 150);
 const CONCURRENCY = 3;
 
@@ -210,6 +214,145 @@ export function extractJsonLdProducts(html: string, pageUrl: string): RawProduct
   return out;
 }
 
+// ---------- mikrodata çıkarımı (JSON-LD yoksa 2. sinyal) ----------
+
+function attrValue(tag: string): string | null {
+  // content > src > href sırasıyla; ürün detay sayfası tek ürün varsayılır
+  const m =
+    /content\s*=\s*["']([^"']+)["']/i.exec(tag) ||
+    /src\s*=\s*["']([^"']+)["']/i.exec(tag) ||
+    /href\s*=\s*["']([^"']+)["']/i.exec(tag);
+  return m ? m[1] : null;
+}
+
+function microProp(html: string, prop: string): string | null {
+  const re = new RegExp('<[^>]*itemprop\\s*=\\s*["\']' + prop + '["\'][^>]*>', 'gi');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const fromAttr = attrValue(m[0]);
+    if (fromAttr) return fromAttr.trim();
+    // attribute yoksa etiketin iç metnine bak (<span itemprop="name">Elbise</span>)
+    const rest = html.slice(m.index + m[0].length);
+    const text = /^([^<]{1,300})</.exec(rest);
+    if (text && text[1].trim()) return text[1].trim();
+  }
+  return null;
+}
+
+export function extractMicrodataProduct(html: string, pageUrl: string): RawProduct | null {
+  if (!/itemtype\s*=\s*["']https?:\/\/schema\.org\/Product["']/i.test(html)) return null;
+  const name = microProp(html, 'name');
+  if (!name) return null;
+  return {
+    externalId: (microProp(html, 'sku') || microProp(html, 'productID') || externalIdFromUrl(pageUrl)).slice(0, 120),
+    url: pageUrl,
+    name: name.slice(0, 200),
+    price: toNumber(microProp(html, 'price')),
+    currency: microProp(html, 'priceCurrency') || 'TRY',
+    imageUrl: microProp(html, 'image'),
+    rawCategory: microProp(html, 'category'),
+  };
+}
+
+// ---------- OpenGraph çıkarımı (3. sinyal) ----------
+
+function metaContent(html: string, property: string): string | null {
+  // property="og:x" content="..." — iki attribute sırası da desteklenir
+  const re = new RegExp(
+    '<meta[^>]+(?:property|name)\\s*=\\s*["\']' + property.replace(/[.:]/g, '\\$&') +
+    '["\'][^>]*>',
+    'i',
+  );
+  const m = re.exec(html);
+  if (!m) return null;
+  const c = /content\s*=\s*["']([^"']*)["']/i.exec(m[0]);
+  return c && c[1].trim() ? c[1].trim() : null;
+}
+
+export function extractOgProduct(html: string, pageUrl: string): RawProduct | null {
+  const type = metaContent(html, 'og:type');
+  if (!type || !/product/i.test(type)) return null; // her sayfayı ürün sanma
+  const name = metaContent(html, 'og:title');
+  if (!name) return null;
+  const url = metaContent(html, 'og:url') || pageUrl;
+  return {
+    externalId: externalIdFromUrl(url).slice(0, 120),
+    url,
+    name: name.slice(0, 200),
+    price: toNumber(metaContent(html, 'product:price:amount') || metaContent(html, 'og:price:amount')),
+    currency: metaContent(html, 'product:price:currency') || metaContent(html, 'og:price:currency') || 'TRY',
+    imageUrl: metaContent(html, 'og:image'),
+    rawCategory: null,
+  };
+}
+
+// Üç sinyali sırayla dene: JSON-LD (çok ürün olabilir) → mikrodata → OpenGraph
+export function extractProducts(html: string, pageUrl: string): RawProduct[] {
+  const jsonld = extractJsonLdProducts(html, pageUrl);
+  if (jsonld.length) return jsonld;
+  const micro = extractMicrodataProduct(html, pageUrl);
+  if (micro) return [micro];
+  const og = extractOgProduct(html, pageUrl);
+  return og ? [og] : [];
+}
+
+// ---------- link keşfi (BFS) ----------
+
+// Ürün olamayacak / taranmaması gereken yollar
+const SKIP_URL =
+  /\/(sepet|cart|checkout|odeme|payment|login|signin|giris|register|kayit|hesab|account|uye|favori|wishlist|iletisim|contact|hakkimizda|about|blog|yardim|help|sss|faq|kvkk|gizlilik|privacy|policy|sozlesme|terms|api|cdn|wp-admin|wp-login)\b/i;
+const SKIP_EXT = /\.(jpe?g|png|gif|webp|svg|ico|css|js|mjs|json|xml|txt|pdf|zip|rar|mp4|webm|woff2?|ttf|eot)(\?|$)/i;
+const TRACKING_PARAMS = /^(utm_|gclid|fbclid|yclid|mc_|ref$|source$)/i;
+
+export type UrlKind = 'product' | 'listing' | 'other';
+
+// URL kalıbından sayfa türü tahmini — kuyruk önceliği için (kesin hüküm değil,
+// her sayfada yine de üç sinyalli çıkarım denenir)
+export function classifyUrl(url: string): UrlKind {
+  if (/(\/urun|\/product|\/prod\b|\/p\/|\/prd|\/item|\/dp\/|-p-\d+|[?&](id|sku|pid|product_id|urun)=)/i.test(url)) {
+    return 'product';
+  }
+  if (/(kategori|category|collection|koleksiyon|\/c\/|\/k\/|\/liste|[?&](page|sayfa|pg)=|\/(kadin|erkek|cocuk|indirim|sale|outlet|yeni|new)\b)/i.test(url)) {
+    return 'listing';
+  }
+  return 'other';
+}
+
+// Takip edilebilir hale getir: fragment at, izleme parametrelerini temizle
+export function normalizeUrl(raw: string, base: string): string | null {
+  try {
+    const u = new URL(raw, base);
+    if (!/^https?:$/.test(u.protocol)) return null;
+    u.hash = '';
+    const drop: string[] = [];
+    u.searchParams.forEach((_, k) => { if (TRACKING_PARAMS.test(k)) drop.push(k); });
+    for (const k of drop) u.searchParams.delete(k);
+    let s = u.toString();
+    if (s.endsWith('/') && u.pathname !== '/') s = s.slice(0, -1);
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+// Sayfadaki aynı-origin, taranabilir linkleri çıkar
+export function extractLinks(html: string, pageUrl: string): string[] {
+  const origin = baseOrigin(pageUrl);
+  const out = new Set<string>();
+  const re = /<a\b[^>]*href\s*=\s*["']([^"'#][^"']*)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const href = m[1].trim();
+    if (/^(mailto:|tel:|javascript:|data:)/i.test(href)) continue;
+    const url = normalizeUrl(href, pageUrl);
+    if (!url || !url.startsWith(origin)) continue;
+    if (SKIP_EXT.test(url) || SKIP_URL.test(url)) continue;
+    out.add(url);
+    if (out.size >= 500) break; // tek sayfadan makul üst sınır
+  }
+  return [...out];
+}
+
 // ---------- nazik sayfa çekme kuyruğu ----------
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -233,4 +376,68 @@ export async function crawlPages(
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
   return fetched;
+}
+
+// ---------- BFS site örümceği ----------
+// Sitemap tohumları + link takibi. Sitemap'te yalnızca kategori sayfaları
+// listelense (ya da hiç sitemap olmasa) bile kategori → ürün linkleri
+// izlenerek ürün sayfalarına ulaşılır. Ürün-benzeri URL'ler önce taranır.
+
+export type CrawlStats = { pagesFetched: number; queued: number };
+
+export async function crawlSite(
+  siteUrl: string,
+  onPage: (url: string, html: string) => Promise<void>,
+): Promise<CrawlStats> {
+  const start = normalizeUrl(siteUrl, siteUrl);
+  if (!start) return { pagesFetched: 0, queued: 0 };
+  const origin = baseOrigin(start);
+
+  // Öncelikli kuyruklar: ürün > liste > diğer (her giriş: [url, derinlik])
+  const queues: Record<UrlKind, Array<[string, number]>> = { product: [], listing: [], other: [] };
+  const seen = new Set<string>();
+
+  function enqueue(url: string, depth: number) {
+    if (seen.has(url) || seen.size >= MAX_QUEUE) return;
+    seen.add(url);
+    queues[classifyUrl(url)].push([url, depth]);
+  }
+
+  enqueue(start, 0);
+  // Sitemap tohumları — ürünler tek tek listeleniyorsa BFS'e gerek kalmadan biter
+  try {
+    for (const u of await discoverPageUrls(start)) {
+      const n = normalizeUrl(u, start);
+      if (n && n.startsWith(origin) && !SKIP_EXT.test(n) && !SKIP_URL.test(n)) enqueue(n, 1);
+    }
+  } catch {
+    // sitemap yoksa sorun değil; link takibi devam eder
+  }
+
+  function nextBatch(size: number): Array<[string, number]> {
+    const batch: Array<[string, number]> = [];
+    for (const kind of ['product', 'listing', 'other'] as UrlKind[]) {
+      while (batch.length < size && queues[kind].length) batch.push(queues[kind].shift()!);
+    }
+    return batch;
+  }
+
+  let fetched = 0;
+  while (fetched < MAX_PAGES) {
+    const batch = nextBatch(Math.min(CONCURRENCY, MAX_PAGES - fetched));
+    if (!batch.length) break;
+    await Promise.all(
+      batch.map(async ([url, depth]) => {
+        const html = await fetchText(url);
+        if (!html) return;
+        fetched++;
+        await onPage(url, html);
+        if (depth < MAX_DEPTH) {
+          for (const link of extractLinks(html, url)) enqueue(link, depth + 1);
+        }
+      }),
+    );
+    await sleep(CRAWL_DELAY_MS);
+  }
+  return { pagesFetched: fetched, queued: seen.size };
 }

@@ -132,10 +132,15 @@ Panel girişi (seed'lenen demo hesabı): **demo@triko.app / triko123** — widge
 Site sahibi ürünleri elle girmez — **Triko ajanı siteyi kendisi öğrenir**:
 
 - **Faz A — İlk keşif:** Panel → Katalog → site adresini gir → "Siteyi tara".
-  Ajan `robots.txt`/`sitemap.xml` üzerinden ürün sayfalarını bulur, her
-  sayfadaki schema.org/Product JSON-LD verisini okur, ürünleri kategorize
-  eder (`ANTHROPIC_API_KEY` varsa claude-haiku-4-5, yoksa kural bazlı) ve
-  uyumlu parçalardan kombinleri **otomatik kurup yayınlar**. İlerleme ve
+  Ajan siteyi bir ziyaretçi gibi gezer: `robots.txt`/`sitemap.xml` tohum
+  olarak kullanılır, ardından **sayfa içi linkler BFS ile takip edilir** —
+  sitemap'te yalnızca kategori sayfaları listelense (ya da hiç sitemap
+  olmasa) bile kategori → ürün linklerinden ürün sayfalarına ulaşılır.
+  Ürün-benzeri URL'ler öncelikli taranır; sepet/login/blog gibi yollar
+  atlanır (derinlik `AGENT_MAX_DEPTH`=3, bütçe `AGENT_MAX_PAGES`=120).
+  Ürün verisi üç sinyalden okunur: **JSON-LD → mikrodata → OpenGraph**.
+  Ürünler kategorize edilir (`ANTHROPIC_API_KEY` varsa claude-haiku-4-5,
+  yoksa kural bazlı) ve uyumlu parçalardan kombinler kurulur. İlerleme ve
   "🤖 ajan aktivitesi" akışı panelde canlı izlenir.
 - **Faz B — Sürekli farkındalık:** İki sinyal birlikte çalışır:
   widget her sayfada gördüğü JSON-LD ürününü bildirir

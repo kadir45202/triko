@@ -5,12 +5,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './prisma';
 import { cacheDel } from './cache';
-import {
-  RawProduct,
-  crawlPages,
-  discoverPageUrls,
-  extractJsonLdProducts,
-} from './crawler';
+import { MAX_PAGES, RawProduct, crawlSite, extractProducts } from './crawler';
 
 const MODEL = 'claude-haiku-4-5'; // spec'in maliyet tercihi (recommend.ts ile aynı)
 
@@ -485,14 +480,13 @@ export async function runScan(
   await logAgent(customerId, 'scan_started', 'Site taraması başladı: ' + siteUrl, { siteUrl, trigger });
 
   try {
-    const urls = await discoverPageUrls(siteUrl);
-    if (!urls.length) throw new Error('sitemap_not_found');
-    status.step = urls.length + ' sayfa taranıyor';
+    status.step = 'Site keşfediliyor (sitemap + link takibi)';
 
     const seenExternalIds = new Set<string>();
-    await crawlPages(urls, async (pageUrl, html) => {
+    const crawl = await crawlSite(siteUrl, async (pageUrl, html) => {
       status.pagesScanned++;
-      const found = extractJsonLdProducts(html, pageUrl);
+      status.step = status.pagesScanned + ' sayfa tarandı, ' + status.productsFound + ' ürün görüldü';
+      const found = extractProducts(html, pageUrl);
       for (const raw of found) {
         seenExternalIds.add(raw.externalId);
         status.productsFound++;
@@ -500,9 +494,14 @@ export async function runScan(
         if (isNew) status.productsNew++;
       }
     });
+    // Hiç sayfa çekilemedi → adres yanlış ya da site erişilemez
+    if (crawl.pagesFetched === 0) throw new Error('site_unreachable');
 
-    // Sitede artık görünmeyen (daha önce crawl ile bulunmuş) ürünleri düşür
-    if (seenExternalIds.size) {
+    // Sitede artık görünmeyen (daha önce crawl ile bulunmuş) ürünleri düşür.
+    // Tarama sayfa bütçesine takıldıysa (site tamamen gezilemedi) atla —
+    // görülmeyen ürün "kaldırıldı" demek değildir, kombinleri yanlış kapatma.
+    const crawlComplete = crawl.queued <= status.pagesScanned || status.pagesScanned < MAX_PAGES;
+    if (seenExternalIds.size && crawlComplete) {
       const gone = await prisma.product.findMany({
         where: { customerId, source: 'crawl', status: 'active', externalId: { notIn: [...seenExternalIds] } },
       });

@@ -193,9 +193,11 @@ export default function CatalogPage() {
         )}
         {error && <p className="mt-3 text-sm text-red-600">Hata: {error}</p>}
         <p className="mt-3 text-xs text-slate-400">
-          Ajan sitemap&apos;inizi bulur, ürün sayfalarındaki schema.org verisini okur, ürünleri
-          kategorize eder ve uyumlu parçalardan kombinler kurup yayınlar. Widget kurulu sayfalarda
-          gezilen yeni ürünler ayrıca anında öğrenilir; kayıtlı site periyodik olarak yeniden taranır.
+          Ajan sitenizi bir ziyaretçi gibi gezer: sitemap varsa oradan başlar, ardından kategori
+          sayfalarındaki linkleri takip ederek ürün sayfalarını kendisi bulur (sitemap&apos;te ürünler
+          tek tek listelenmese de olur). Ürün verisini JSON-LD, mikrodata veya OpenGraph
+          etiketlerinden okur, kategorize eder ve uyumlu parçalardan kombinler kurar. Widget kurulu
+          sayfalarda gezilen yeni ürünler ayrıca anında öğrenilir; kayıtlı site periyodik yeniden taranır.
         </p>
       </Card>
 
