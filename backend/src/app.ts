@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { prisma } from './lib/prisma';
 import { MAX_IMAGE_BYTES, UPLOAD_DIR } from './lib/storage';
 import { uploadRoutes } from './routes/uploads';
 import { authRoutes } from './routes/auth';
@@ -62,11 +63,18 @@ export function buildApp(): FastifyInstance {
     return payload;
   });
 
-  // Panel uçları için JWT koruması: access token'ı doğrular, customerId'yi request'e koyar
+  // Panel uçları için JWT koruması: access token'ı doğrular, customerId'yi request'e koyar.
+  // Müşterinin hâlâ var olduğu da doğrulanır — imzası geçerli ama sahibi silinmiş
+  // (ör. DB yeniden seed'lendi) bir token 500 yerine 401 alıp login'e düşmeli.
   app.decorate('authGuard', async function (req: FastifyRequest, reply: FastifyReply) {
     try {
       const payload = await req.jwtVerify<{ sub: string; typ: string }>();
       if (payload.typ !== 'access') throw new Error('wrong token type');
+      const exists = await prisma.customer.findUnique({
+        where: { id: payload.sub },
+        select: { id: true },
+      });
+      if (!exists) throw new Error('customer not found');
       req.customerId = payload.sub;
     } catch {
       reply.code(401).send({ error: 'unauthorized' });
