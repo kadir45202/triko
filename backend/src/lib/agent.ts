@@ -1,11 +1,11 @@
 // Katalog ajanı (Faz A + B): siteyi keşfeder, ürünleri anlar, kombinleri kurar.
-// Kaba işler (sitemap, sayfa indirme, JSON-LD) crawler.ts'te deterministik;
+// Kaba işler (platform API, sayfa indirme, JSON-LD) crawler.ts'te deterministik;
 // bu modül anlama/karar noktalarında Claude'u çağırır. ANTHROPIC_API_KEY
 // yoksa aynı sözleşmeyle kural bazlı fallback çalışır (recommend.ts deseni).
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './prisma';
 import { cacheDel } from './cache';
-import { MAX_PAGES, RawProduct, crawlSite, extractProducts } from './crawler';
+import { MAX_PAGES, RawProduct, crawlSite, extractProducts, fetchPlatformProducts } from './crawler';
 
 const MODEL = 'claude-haiku-4-5'; // spec'in maliyet tercihi (recommend.ts ile aynı)
 
@@ -465,7 +465,7 @@ export async function runScan(
   if (isScanRunning(customerId)) return;
   const status: ScanStatus = {
     state: 'running',
-    step: 'Site haritası aranıyor',
+    step: 'Keşif başlıyor',
     pagesScanned: 0,
     productsFound: 0,
     productsNew: 0,
@@ -480,27 +480,55 @@ export async function runScan(
   await logAgent(customerId, 'scan_started', 'Site taraması başladı: ' + siteUrl, { siteUrl, trigger });
 
   try {
-    status.step = 'Site keşfediliyor (sitemap + link takibi)';
-
     const seenExternalIds = new Set<string>();
-    const crawl = await crawlSite(siteUrl, async (pageUrl, html) => {
-      status.pagesScanned++;
-      status.step = status.pagesScanned + ' sayfa tarandı, ' + status.productsFound + ' ürün görüldü';
-      const found = extractProducts(html, pageUrl);
-      for (const raw of found) {
+    let crawlComplete = false;
+
+    // 1. kanal: platform ürün API'si (Shopify/WooCommerce). Uç varsa katalog
+    // birkaç istekle eksiksiz gelir; sayfa sayfa gezmeye gerek kalmaz.
+    status.step = 'Mağaza altyapısı yoklanıyor (ürün API uçları)';
+    const platform = await fetchPlatformProducts(siteUrl);
+
+    if (platform) {
+      status.pagesScanned = platform.requests;
+      await logAgent(
+        customerId,
+        'platform_detected',
+        (platform.platform === 'shopify' ? 'Shopify' : 'WooCommerce') +
+          ' ürün API\'si bulundu: ' + platform.products.length + ' ürün',
+        { platform: platform.platform, count: platform.products.length },
+      );
+      for (const raw of platform.products) {
         seenExternalIds.add(raw.externalId);
         status.productsFound++;
+        status.step = status.productsFound + ' ürün işlendi (' + platform.platform + ' API)';
         const { isNew } = await upsertProduct(customerId, raw, 'crawl');
         if (isNew) status.productsNew++;
       }
-    });
-    // Hiç sayfa çekilemedi → adres yanlış ya da site erişilemez
-    if (crawl.pagesFetched === 0) throw new Error('site_unreachable');
+      // API kataloğun tamamını verdi → görünmeyen ürünler gerçekten kalkmış
+      crawlComplete = true;
+    } else {
+      // 2. kanal: BFS link takibi — ajan siteyi bir ziyaretçi gibi gezer
+      status.step = 'Site linkleri adım adım geziliyor';
+      const crawl = await crawlSite(siteUrl, async (pageUrl, html) => {
+        status.pagesScanned++;
+        status.step = status.pagesScanned + ' sayfa tarandı, ' + status.productsFound + ' ürün görüldü';
+        const found = extractProducts(html, pageUrl);
+        for (const raw of found) {
+          seenExternalIds.add(raw.externalId);
+          status.productsFound++;
+          const { isNew } = await upsertProduct(customerId, raw, 'crawl');
+          if (isNew) status.productsNew++;
+        }
+      });
+      // Hiç sayfa çekilemedi → adres yanlış ya da site erişilemez
+      if (crawl.pagesFetched === 0) throw new Error('site_unreachable');
+
+      // Tarama sayfa bütçesine takıldıysa (site tamamen gezilemedi) ürün
+      // düşürme atlanır — görülmeyen ürün "kaldırıldı" demek değildir.
+      crawlComplete = crawl.queued <= status.pagesScanned || status.pagesScanned < MAX_PAGES;
+    }
 
     // Sitede artık görünmeyen (daha önce crawl ile bulunmuş) ürünleri düşür.
-    // Tarama sayfa bütçesine takıldıysa (site tamamen gezilemedi) atla —
-    // görülmeyen ürün "kaldırıldı" demek değildir, kombinleri yanlış kapatma.
-    const crawlComplete = crawl.queued <= status.pagesScanned || status.pagesScanned < MAX_PAGES;
     if (seenExternalIds.size && crawlComplete) {
       const gone = await prisma.product.findMany({
         where: { customerId, source: 'crawl', status: 'active', externalId: { notIn: [...seenExternalIds] } },

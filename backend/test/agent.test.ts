@@ -6,7 +6,7 @@ import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { prisma } from '../src/lib/prisma';
 import { hashPassword } from '../src/lib/password';
-import { parseSitemapLocs, extractJsonLdProducts, externalIdFromUrl } from '../src/lib/crawler';
+import { extractJsonLdProducts, externalIdFromUrl } from '../src/lib/crawler';
 import { ruleBasedCombos, enrichPending, generateCombos } from '../src/lib/agent';
 
 let app: FastifyInstance;
@@ -40,14 +40,6 @@ before(async () => {
 after(async () => {
   await app.close();
   await prisma.$disconnect();
-});
-
-test('sitemap parser <loc> girdilerini çıkarır', () => {
-  const xml =
-    '<?xml version="1.0"?><urlset><url><loc>https://a.com/u?id=1&amp;x=2</loc></url>' +
-    '<url><loc> https://a.com/u2 </loc></url></urlset>';
-  const locs = parseSitemapLocs(xml);
-  assert.deepEqual(locs, ['https://a.com/u?id=1&x=2', 'https://a.com/u2']);
 });
 
 test('JSON-LD parser Product düğümünü ve @graph içini bulur', () => {

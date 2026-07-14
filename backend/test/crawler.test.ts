@@ -1,5 +1,5 @@
-// BFS örümceği testleri: link çıkarımı/sınıflandırma, mikrodata/OG çıkarımı
-// ve sitemap'siz bir sitede kategori → ürün link takibiyle keşif.
+// Keşif katmanı testleri: link çıkarımı/sınıflandırma, çok sinyalli ürün
+// çıkarımı, platform API keşfi ve link takibiyle (sitemap'siz) site gezme.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -7,11 +7,14 @@ import { AddressInfo } from 'node:net';
 import {
   classifyUrl,
   crawlSite,
+  extractHeuristicProduct,
   extractLinks,
   extractMicrodataProduct,
   extractOgProduct,
   extractProducts,
+  fetchPlatformProducts,
   normalizeUrl,
+  parseTrPrice,
 } from '../src/lib/crawler';
 
 test('classifyUrl: ürün/kategori/diğer kalıpları', () => {
@@ -81,6 +84,32 @@ test('OpenGraph: og:type=product sayfasından ürün çıkar, diğer sayfalarda 
   assert.equal(extractOgProduct(article, 'https://a.com/blog/x'), null);
 });
 
+test('parseTrPrice: Türkçe fiyat biçimleri', () => {
+  assert.equal(parseTrPrice('1.899,90'), 1899.9);
+  assert.equal(parseTrPrice('1.899'), 1899);
+  assert.equal(parseTrPrice('749,50'), 749.5);
+  assert.equal(parseTrPrice('2499'), 2499);
+  assert.equal(parseTrPrice('12.5'), 12.5);
+  assert.equal(parseTrPrice(''), null);
+});
+
+test('sezgisel çıkarım: yapılandırılmış veri yoksa h1 + fiyat kalıbından okur', () => {
+  const html =
+    '<html><head><title>Oversize Triko Kazak | MağazaX</title>' +
+    '<meta property="og:image" content="https://a.com/kazak.jpg"></head>' +
+    '<body><h1>Oversize <span>Triko</span> Kazak</h1><div class="fiyat">1.299,90 TL</div></body></html>';
+  const p = extractHeuristicProduct(html, 'https://a.com/urun/oversize-triko-kazak');
+  assert.ok(p);
+  assert.equal(p!.name, 'Oversize Triko Kazak');
+  assert.equal(p!.price, 1299.9);
+  assert.equal(p!.imageUrl, 'https://a.com/kazak.jpg');
+
+  // ürün-benzeri olmayan URL'de asla çalışmaz (liste sayfasını ürün sanma)
+  assert.equal(extractHeuristicProduct(html, 'https://a.com/kategori/kazak'), null);
+  // fiyat bulunamazsa ürün sayılmaz
+  assert.equal(extractHeuristicProduct('<h1>Başlık</h1>', 'https://a.com/urun/x'), null);
+});
+
 test('extractProducts: JSON-LD > mikrodata > OG öncelik sırası', () => {
   const both =
     '<script type="application/ld+json">' +
@@ -142,4 +171,100 @@ test('crawlSite: sitemap olmadan kategori linklerinden ürünleri bulur', async 
   });
   assert.ok(stats.pagesFetched >= 4); // ana + kategori + 2 ürün
   assert.deepEqual(found.sort(), ['Keten Elbise', 'Saten Elbise']);
+});
+
+// --- platform API keşfi: sahte Shopify ve WooCommerce uçları ---
+
+const apiServers: http.Server[] = [];
+
+function listen(server: http.Server): Promise<string> {
+  apiServers.push(server);
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve('http://127.0.0.1:' + (server.address() as AddressInfo).port);
+    });
+  });
+}
+
+after(() => Promise.all(apiServers.map((s) => new Promise<void>((r) => s.close(() => r())))));
+
+test('fetchPlatformProducts: Shopify /products.json kataloğunu okur', async () => {
+  const origin = await listen(
+    http.createServer((req, res) => {
+      const url = new URL(req.url || '/', 'http://x');
+      if (url.pathname === '/products.json') {
+        res.setHeader('content-type', 'application/json');
+        const page = Number(url.searchParams.get('page') || 1);
+        const products =
+          page === 1
+            ? [
+                {
+                  id: 111, title: 'Saten Midi Elbise', handle: 'saten-midi-elbise',
+                  product_type: 'Elbise',
+                  variants: [{ price: '1899.90' }],
+                  images: [{ src: 'https://cdn.x/elbise.jpg' }],
+                },
+                { id: 222, title: 'Süet Bot', handle: 'suet-bot', product_type: '', variants: [], images: [] },
+              ]
+            : [];
+        return res.end(JSON.stringify({ products }));
+      }
+      res.statusCode = 404;
+      res.end('yok');
+    }),
+  );
+  const cat = await fetchPlatformProducts(origin + '/');
+  assert.ok(cat);
+  assert.equal(cat!.platform, 'shopify');
+  assert.equal(cat!.products.length, 2);
+  assert.equal(cat!.products[0].name, 'Saten Midi Elbise');
+  assert.equal(cat!.products[0].price, 1899.9);
+  assert.equal(cat!.products[0].url, origin + '/products/saten-midi-elbise');
+  assert.equal(cat!.products[0].rawCategory, 'Elbise');
+  assert.equal(cat!.products[1].price, null);
+});
+
+test('fetchPlatformProducts: WooCommerce Store API kataloğunu okur', async () => {
+  const origin = await listen(
+    http.createServer((req, res) => {
+      const url = new URL(req.url || '/', 'http://x');
+      if (url.pathname === '/wp-json/wc/store/v1/products') {
+        res.setHeader('content-type', 'application/json');
+        const page = Number(url.searchParams.get('page') || 1);
+        const items =
+          page === 1
+            ? [
+                {
+                  id: 42, name: 'Keten Gömlek &amp; Co', // Woo isimleri HTML entity içerebilir
+                  permalink: 'https://magaza.x/urun/keten-gomlek',
+                  prices: { price: '74990', currency_code: 'TRY', currency_minor_unit: 2 },
+                  images: [{ src: 'https://magaza.x/kg.jpg' }],
+                  categories: [{ name: 'Gömlek' }],
+                },
+              ]
+            : [];
+        return res.end(JSON.stringify(items));
+      }
+      res.statusCode = 404;
+      res.end('yok');
+    }),
+  );
+  const cat = await fetchPlatformProducts(origin + '/');
+  assert.ok(cat);
+  assert.equal(cat!.platform, 'woocommerce');
+  assert.equal(cat!.products.length, 1);
+  assert.equal(cat!.products[0].name, 'Keten Gömlek & Co');
+  assert.equal(cat!.products[0].price, 749.9);
+  assert.equal(cat!.products[0].currency, 'TRY');
+  assert.equal(cat!.products[0].rawCategory, 'Gömlek');
+});
+
+test('fetchPlatformProducts: platform yoksa null (JSON yerine HTML dönse bile)', async () => {
+  const origin = await listen(
+    http.createServer((_req, res) => {
+      res.setHeader('content-type', 'text/html');
+      res.end('<html>SPA fallback</html>'); // her yola 200 + HTML dönen site
+    }),
+  );
+  assert.equal(await fetchPlatformProducts(origin + '/'), null);
 });

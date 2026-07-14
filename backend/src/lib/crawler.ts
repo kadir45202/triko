@@ -1,8 +1,12 @@
-// Site keşif katmanı (Faz A) — deterministik kısım.
-// İki keşif kanalı birlikte çalışır: (1) robots.txt → sitemap tohumları,
-// (2) sayfa içi link takibi (BFS) — sitemap'te ürünler tek tek listelenmese
-// bile kategori sayfalarındaki linklerden ürün sayfalarına ulaşılır.
-// Ürün verisi üç sinyalden okunur: JSON-LD → mikrodata → OpenGraph.
+// Site keşif katmanı (Faz A) — deterministik kısım. Sitemap KULLANILMAZ
+// (pratikte çoğu sitede eksik/bozuk çıktığı için kaldırıldı).
+// İki keşif kanalı sırayla denenir:
+//   1) Platform ürün API'leri: Shopify /products.json, WooCommerce Store API.
+//      Uç varsa tüm katalog birkaç istekle eksiksiz gelir.
+//   2) Sayfa içi link takibi (BFS): anasayfa + yaygın katalog yollarından
+//      başlar, kategori → ürün linklerini bir ziyaretçi gibi izler.
+// Ürün verisi dört sinyalden okunur: JSON-LD → mikrodata → OpenGraph →
+// sezgisel (h1/title + fiyat kalıbı; yalnızca URL'i ürün gibi görünen sayfada).
 // Anlama gerektiren işler (zenginleştirme, kombinleme) agent.ts'te Claude'a gider.
 
 export type RawProduct = {
@@ -15,26 +19,36 @@ export type RawProduct = {
   rawCategory?: string | null;
 };
 
-const FETCH_TIMEOUT_MS = 8_000;
+const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BODY_BYTES = 900_000;
+const MAX_JSON_BYTES = 6_000_000; // platform API yanıtları (250 ürünlük sayfa) büyük olabilir
 export const MAX_PAGES = Number(process.env.AGENT_MAX_PAGES || 120);
 const MAX_DEPTH = Number(process.env.AGENT_MAX_DEPTH || 3);
 const MAX_QUEUE = 2_000; // keşfedilen link kuyruğu üst sınırı (bellek koruması)
 const CRAWL_DELAY_MS = Number(process.env.AGENT_CRAWL_DELAY_MS || 150);
 const CONCURRENCY = 3;
+const MAX_API_PAGES = 10; // platform API sayfalama üst sınırı
 
-export async function fetchText(url: string): Promise<string | null> {
+// Bazı siteler tanınmayan bot kimliklerini (403/challenge ile) engelliyor.
+// Mağaza sahibi kendi sitesini taradığı için normal tarayıcı kimliği kullanılır.
+const REQUEST_HEADERS = {
+  'user-agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'accept-language': 'tr-TR,tr;q=0.9,en;q=0.8',
+};
+
+async function fetchBody(url: string, accept: string, maxBytes: number): Promise<string | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
       redirect: 'follow',
-      headers: { 'user-agent': 'TrikoBot/1.0 (+https://triko.app)' },
+      headers: { ...REQUEST_HEADERS, accept },
     });
     if (!res.ok) return null;
     const text = await res.text();
-    return text.length > MAX_BODY_BYTES ? text.slice(0, MAX_BODY_BYTES) : text;
+    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
   } catch {
     return null;
   } finally {
@@ -42,23 +56,27 @@ export async function fetchText(url: string): Promise<string | null> {
   }
 }
 
-// ---------- sitemap keşfi ----------
-
-export function parseSitemapLocs(xml: string): string[] {
-  const out: string[] = [];
-  const re = /<loc>\s*([^<]+?)\s*<\/loc>/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml))) out.push(decodeXml(m[1]));
-  return out;
+export function fetchText(url: string): Promise<string | null> {
+  return fetchBody(url, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', MAX_BODY_BYTES);
 }
 
-function decodeXml(s: string): string {
+export async function fetchJson(url: string): Promise<unknown | null> {
+  const body = await fetchBody(url, 'application/json,*/*;q=0.5', MAX_JSON_BYTES);
+  if (!body) return null;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null; // uç 200 dönüp HTML verdiyse (SPA fallback) platform yok say
+  }
+}
+
+function decodeEntities(s: string): string {
   return s
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#0?39;/g, "'");
 }
 
 function baseOrigin(siteUrl: string): string {
@@ -66,54 +84,107 @@ function baseOrigin(siteUrl: string): string {
   return u.origin;
 }
 
-// robots.txt'teki Sitemap: satırları + bilinen sitemap adresleri
-export async function discoverPageUrls(siteUrl: string): Promise<string[]> {
-  const origin = baseOrigin(siteUrl);
-  const candidates: string[] = [];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  const robots = await fetchText(origin + '/robots.txt');
-  if (robots) {
-    for (const line of robots.split('\n')) {
-      const m = /^\s*sitemap:\s*(\S+)/i.exec(line);
-      if (m) candidates.push(m[1]);
+// ---------- platform ürün API'leri (1. keşif kanalı) ----------
+// Yaygın e-ticaret altyapıları kataloğu herkese açık JSON uçlarından verir;
+// bu uçlar sayfa gezmekten hem hızlı hem eksiksizdir.
+
+export type PlatformCatalog = {
+  platform: 'shopify' | 'woocommerce';
+  products: RawProduct[];
+  requests: number;
+};
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+async function shopifyCatalog(origin: string): Promise<PlatformCatalog | null> {
+  const products: RawProduct[] = [];
+  let requests = 0;
+  for (let page = 1; page <= MAX_API_PAGES; page++) {
+    const data = asRecord(await fetchJson(`${origin}/products.json?limit=250&page=${page}`));
+    requests++;
+    if (!data || !Array.isArray(data.products)) break;
+    const batch = data.products as unknown[];
+    if (!batch.length) break;
+    for (const item of batch) {
+      const p = asRecord(item);
+      if (!p || typeof p.title !== 'string' || typeof p.handle !== 'string') continue;
+      const variant = asRecord(Array.isArray(p.variants) ? p.variants[0] : null);
+      const image = asRecord(Array.isArray(p.images) ? p.images[0] : null);
+      products.push({
+        externalId: String(p.id ?? p.handle).slice(0, 120),
+        url: origin + '/products/' + p.handle,
+        name: decodeEntities(p.title).slice(0, 200),
+        price: toNumber(variant?.price),
+        currency: null, // products.json para birimi vermez; kayıt katmanı TRY varsayar
+        imageUrl: typeof image?.src === 'string' ? image.src : null,
+        rawCategory: typeof p.product_type === 'string' && p.product_type ? p.product_type : null,
+      });
     }
+    if (batch.length < 250) break;
+    await sleep(CRAWL_DELAY_MS);
   }
-  // siteUrl'in kendisi bir sitemap/feed olabilir
-  if (/\.xml(\?|$)/i.test(siteUrl)) candidates.unshift(siteUrl);
-  candidates.push(
-    origin + '/sitemap.xml',
-    origin + '/sitemap_index.xml',
-    new URL('sitemap.xml', siteUrl.endsWith('/') ? siteUrl : siteUrl + '/').toString(),
-  );
+  return products.length ? { platform: 'shopify', products, requests } : null;
+}
 
-  const seen = new Set<string>();
-  const pages = new Set<string>();
-  for (const sm of candidates) {
-    if (seen.has(sm) || pages.size >= MAX_PAGES) continue;
-    seen.add(sm);
-    const xml = await fetchText(sm);
-    if (!xml || !/<(urlset|sitemapindex)/i.test(xml)) continue;
-    const locs = parseSitemapLocs(xml);
-    if (/<sitemapindex/i.test(xml)) {
-      // sitemap index: alt sitemap'leri sıraya al (derinlik 1)
-      for (const child of locs.slice(0, 10)) {
-        if (seen.has(child)) continue;
-        seen.add(child);
-        const childXml = await fetchText(child);
-        if (childXml) for (const l of parseSitemapLocs(childXml)) pages.add(l);
-        if (pages.size >= MAX_PAGES * 3) break;
+// Store API fiyatları alt birim cinsinden string döner ("129990" + minor_unit 2)
+function wooPrice(prices: Record<string, unknown> | null): number | null {
+  if (!prices) return null;
+  const raw = prices.price ?? prices.regular_price;
+  if (raw == null || raw === '') return null;
+  const n = parseInt(String(raw), 10);
+  if (!isFinite(n)) return null;
+  const minor = Number(prices.currency_minor_unit ?? 2);
+  return n / Math.pow(10, isFinite(minor) ? minor : 2);
+}
+
+async function wooCatalog(origin: string): Promise<PlatformCatalog | null> {
+  // wp-json rewrite kapalı sitelerde ?rest_route= biçimi çalışır
+  const bases = [
+    origin + '/wp-json/wc/store/v1/products',
+    origin + '/?rest_route=/wc/store/v1/products',
+  ];
+  for (const base of bases) {
+    const sep = base.includes('?') ? '&' : '?';
+    const products: RawProduct[] = [];
+    let requests = 0;
+    for (let page = 1; page <= MAX_API_PAGES; page++) {
+      const data = await fetchJson(`${base}${sep}per_page=100&page=${page}`);
+      requests++;
+      if (!Array.isArray(data) || !data.length) break;
+      let valid = 0;
+      for (const item of data) {
+        const p = asRecord(item);
+        if (!p || typeof p.name !== 'string' || typeof p.permalink !== 'string') continue;
+        valid++;
+        const prices = asRecord(p.prices);
+        const image = asRecord(Array.isArray(p.images) ? p.images[0] : null);
+        const category = asRecord(Array.isArray(p.categories) ? p.categories[0] : null);
+        products.push({
+          externalId: String(p.id ?? externalIdFromUrl(p.permalink)).slice(0, 120),
+          url: p.permalink,
+          name: decodeEntities(p.name).slice(0, 200),
+          price: wooPrice(prices),
+          currency: typeof prices?.currency_code === 'string' ? prices.currency_code : null,
+          imageUrl: typeof image?.src === 'string' ? image.src : null,
+          rawCategory: typeof category?.name === 'string' ? decodeEntities(category.name) : null,
+        });
       }
-    } else {
-      for (const l of locs) pages.add(l);
+      if (!valid) break; // JSON döndü ama ürün şeması değil
+      if (data.length < 100) break;
+      await sleep(CRAWL_DELAY_MS);
     }
-    if (pages.size) break; // ilk çalışan sitemap yeter
+    if (products.length) return { platform: 'woocommerce', products, requests };
   }
+  return null;
+}
 
-  // Ürün olma ihtimali yüksek URL'leri öne al (urun|product|/p/ kalıpları)
-  const all = [...pages].filter((u) => u.startsWith(origin));
-  const productish = all.filter((u) => /urun|product|\/p\/|\/prd|item/i.test(u));
-  const rest = all.filter((u) => !productish.includes(u));
-  return [...productish, ...rest].slice(0, MAX_PAGES);
+export async function fetchPlatformProducts(siteUrl: string): Promise<PlatformCatalog | null> {
+  const origin = baseOrigin(siteUrl);
+  return (await shopifyCatalog(origin)) || (await wooCatalog(origin));
 }
 
 // ---------- JSON-LD çıkarımı ----------
@@ -286,14 +357,65 @@ export function extractOgProduct(html: string, pageUrl: string): RawProduct | nu
   };
 }
 
-// Üç sinyali sırayla dene: JSON-LD (çok ürün olabilir) → mikrodata → OpenGraph
+// ---------- sezgisel çıkarım (4. sinyal — yapılandırılmış veri hiç yoksa) ----------
+// Yalnızca URL'i ürün sayfası gibi görünen sayfalarda çalışır ve hem isim hem
+// fiyat ister; liste/blog sayfalarını ürün sanmamak için bilerek muhafazakâr.
+
+function stripTags(s: string): string {
+  return decodeEntities(s.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+// Türkçe fiyat gösterimini sayıya çevir: "1.899,90" → 1899.9, "1.899" → 1899
+export function parseTrPrice(s: string): number | null {
+  const cleaned = s.replace(/[^\d.,]/g, '');
+  if (!cleaned) return null;
+  let normalized = cleaned;
+  if (cleaned.includes(',')) {
+    normalized = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    const parts = cleaned.split('.');
+    // "1.899" biçimi: son grup 3 haneliyse binlik ayracıdır
+    if (parts.length > 1 && parts[parts.length - 1].length === 3) normalized = parts.join('');
+  }
+  const n = parseFloat(normalized);
+  return isFinite(n) && n > 0 ? n : null;
+}
+
+export function extractHeuristicProduct(html: string, pageUrl: string): RawProduct | null {
+  if (classifyUrl(pageUrl) !== 'product') return null;
+  const h1 = /<h1[^>]*>([\s\S]{1,500}?)<\/h1>/i.exec(html);
+  let name = h1 ? stripTags(h1[1]) : '';
+  if (!name) {
+    const t = /<title[^>]*>([^<]{2,200})<\/title>/i.exec(html);
+    name = t ? decodeEntities(t[1].split('|')[0]).trim() : '';
+  }
+  if (!name) return null;
+  const priceMatch =
+    /(?:₺|\bTL\b)\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)/.exec(html) ||
+    /(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:₺|\bTL\b)/.exec(html);
+  const price = priceMatch ? parseTrPrice(priceMatch[1] || priceMatch[2] || '') : null;
+  if (price == null) return null;
+  return {
+    externalId: externalIdFromUrl(pageUrl).slice(0, 120),
+    url: pageUrl,
+    name: name.slice(0, 200),
+    price,
+    currency: 'TRY',
+    imageUrl: metaContent(html, 'og:image'),
+    rawCategory: null,
+  };
+}
+
+// Dört sinyali sırayla dene: JSON-LD (çok ürün olabilir) → mikrodata → OG → sezgisel
 export function extractProducts(html: string, pageUrl: string): RawProduct[] {
   const jsonld = extractJsonLdProducts(html, pageUrl);
   if (jsonld.length) return jsonld;
   const micro = extractMicrodataProduct(html, pageUrl);
   if (micro) return [micro];
   const og = extractOgProduct(html, pageUrl);
-  return og ? [og] : [];
+  if (og) return [og];
+  const heuristic = extractHeuristicProduct(html, pageUrl);
+  return heuristic ? [heuristic] : [];
 }
 
 // ---------- link keşfi (BFS) ----------
@@ -307,7 +429,7 @@ const TRACKING_PARAMS = /^(utm_|gclid|fbclid|yclid|mc_|ref$|source$)/i;
 export type UrlKind = 'product' | 'listing' | 'other';
 
 // URL kalıbından sayfa türü tahmini — kuyruk önceliği için (kesin hüküm değil,
-// her sayfada yine de üç sinyalli çıkarım denenir)
+// her sayfada yine de çok sinyalli çıkarım denenir)
 export function classifyUrl(url: string): UrlKind {
   if (/(\/urun|\/product|\/prod\b|\/p\/|\/prd|\/item|\/dp\/|-p-\d+|[?&](id|sku|pid|product_id|urun)=)/i.test(url)) {
     return 'product';
@@ -353,35 +475,16 @@ export function extractLinks(html: string, pageUrl: string): string[] {
   return [...out];
 }
 
-// ---------- nazik sayfa çekme kuyruğu ----------
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-export async function crawlPages(
-  urls: string[],
-  onPage: (url: string, html: string) => Promise<void>,
-): Promise<number> {
-  let index = 0;
-  let fetched = 0;
-  async function worker() {
-    while (index < urls.length) {
-      const url = urls[index++];
-      const html = await fetchText(url);
-      if (html) {
-        fetched++;
-        await onPage(url, html);
-      }
-      await sleep(CRAWL_DELAY_MS);
-    }
-  }
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-  return fetched;
-}
-
-// ---------- BFS site örümceği ----------
-// Sitemap tohumları + link takibi. Sitemap'te yalnızca kategori sayfaları
-// listelense (ya da hiç sitemap olmasa) bile kategori → ürün linkleri
+// ---------- BFS site örümceği (2. keşif kanalı) ----------
+// Anasayfa + yaygın katalog giriş yolları tohumlanır; kategori → ürün linkleri
 // izlenerek ürün sayfalarına ulaşılır. Ürün-benzeri URL'ler önce taranır.
+
+// Menüde linki olmasa da denemeye değer yaygın katalog giriş noktaları.
+// Var olmayanlar hızlı 404 döner ve sayfa bütçesinden düşmez.
+const COMMON_ENTRY_PATHS = [
+  '/collections/all', '/shop', '/magaza', '/urunler', '/tum-urunler',
+  '/products', '/kategori', '/kadin', '/erkek', '/yeni-gelenler', '/indirim',
+];
 
 export type CrawlStats = { pagesFetched: number; queued: number };
 
@@ -404,15 +507,7 @@ export async function crawlSite(
   }
 
   enqueue(start, 0);
-  // Sitemap tohumları — ürünler tek tek listeleniyorsa BFS'e gerek kalmadan biter
-  try {
-    for (const u of await discoverPageUrls(start)) {
-      const n = normalizeUrl(u, start);
-      if (n && n.startsWith(origin) && !SKIP_EXT.test(n) && !SKIP_URL.test(n)) enqueue(n, 1);
-    }
-  } catch {
-    // sitemap yoksa sorun değil; link takibi devam eder
-  }
+  for (const path of COMMON_ENTRY_PATHS) enqueue(origin + path, 1);
 
   function nextBatch(size: number): Array<[string, number]> {
     const batch: Array<[string, number]> = [];

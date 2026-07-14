@@ -62,7 +62,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const EVENT_ICONS: Record<string, string> = {
-  scan_started: '🔍', product_found: '🆕', product_enriched: '🏷️',
+  scan_started: '🔍', platform_detected: '🔌', product_found: '🆕', product_enriched: '🏷️',
   combo_created: '✨', product_removed: '🗑️', scan_finished: '✅', error: '⚠️',
 };
 
@@ -193,11 +193,13 @@ export default function CatalogPage() {
         )}
         {error && <p className="mt-3 text-sm text-red-600">Hata: {error}</p>}
         <p className="mt-3 text-xs text-slate-400">
-          Ajan sitenizi bir ziyaretçi gibi gezer: sitemap varsa oradan başlar, ardından kategori
-          sayfalarındaki linkleri takip ederek ürün sayfalarını kendisi bulur (sitemap&apos;te ürünler
-          tek tek listelenmese de olur). Ürün verisini JSON-LD, mikrodata veya OpenGraph
-          etiketlerinden okur, kategorize eder ve uyumlu parçalardan kombinler kurar. Widget kurulu
-          sayfalarda gezilen yeni ürünler ayrıca anında öğrenilir; kayıtlı site periyodik yeniden taranır.
+          Ajan önce mağaza altyapınızın açık ürün API&apos;sini dener (Shopify, WooCommerce) —
+          varsa tüm katalog saniyeler içinde gelir. Yoksa sitenizi bir ziyaretçi gibi gezer:
+          anasayfadan başlayıp kategori sayfalarındaki linkleri takip ederek ürün sayfalarını
+          kendisi bulur. Ürün verisini JSON-LD, mikrodata veya OpenGraph etiketlerinden — hiçbiri
+          yoksa sayfa başlığı ve fiyat bilgisinden — okur, kategorize eder ve uyumlu parçalardan
+          kombinler kurar. Widget kurulu sayfalarda gezilen yeni ürünler ayrıca anında öğrenilir;
+          kayıtlı site periyodik yeniden taranır.
         </p>
       </Card>
 
