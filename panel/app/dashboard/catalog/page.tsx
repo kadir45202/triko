@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { Card, PageHeader } from '@/components/ui';
 
@@ -28,6 +28,7 @@ type Scan = {
   productsFound: number;
   productsNew: number;
   combosCreated: number;
+  pages?: string[];
   error?: string;
 } | null;
 
@@ -43,6 +44,7 @@ type ScanRun = {
   productsRemoved: number;
   combosCreated: number;
   error: string | null;
+  pages: string[];
   startedAt: string;
   finishedAt: string | null;
 };
@@ -82,6 +84,22 @@ function fmtDuration(startedAt: string, finishedAt: string | null): string {
   return Math.floor(sec / 60) + ' dk ' + (sec % 60) + ' sn';
 }
 
+// Taranan sayfa URL'lerinin kaydırılabilir listesi (canlı tarama + geçmiş)
+function PageList({ pages }: { pages: string[] }) {
+  return (
+    <ul className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 divide-y divide-slate-100">
+      {pages.map((u, i) => (
+        <li key={i} className="px-3 py-1.5 text-xs text-slate-600 truncate">
+          <span className="text-slate-400 mr-2 tabular-nums">{i + 1}.</span>
+          <a href={u} target="_blank" rel="noreferrer" className="hover:text-brand-600" title={u}>
+            {u}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function CatalogPage() {
   const [siteUrl, setSiteUrl] = useState('');
   const [savedSiteUrl, setSavedSiteUrl] = useState<string | null>(null);
@@ -90,6 +108,7 @@ export default function CatalogPage() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [runs, setRuns] = useState<ScanRun[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -190,6 +209,14 @@ export default function CatalogPage() {
               {scan.pagesScanned} sayfa · {scan.productsFound} ürün görüldü · {scan.productsNew} yeni · {scan.combosCreated} kombin
             </span>
           </div>
+        )}
+        {scan && (scan.pages?.length ?? 0) > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer select-none text-xs font-medium text-slate-500 hover:text-slate-700">
+              Taranan sayfalar ({scan.pages!.length})
+            </summary>
+            <PageList pages={scan.pages!} />
+          </details>
         )}
         {error && <p className="mt-3 text-sm text-red-600">Hata: {error}</p>}
         <p className="mt-3 text-xs text-slate-400">
@@ -350,11 +377,24 @@ export default function CatalogPage() {
                 </thead>
                 <tbody>
                   {runs.map((r) => (
-                    <tr key={r.id} className="border-b border-slate-50 last:border-0">
+                    <Fragment key={r.id}>
+                    <tr className="border-b border-slate-50 last:border-0">
                       <td className="py-2.5 pr-3 whitespace-nowrap">{fmtDateTime(r.startedAt)}</td>
                       <td className="py-2.5 pr-3 text-slate-600">{TRIGGER_LABELS[r.trigger] || r.trigger}</td>
                       <td className="py-2.5 pr-3 text-slate-600 whitespace-nowrap">{fmtDuration(r.startedAt, r.finishedAt)}</td>
-                      <td className="py-2.5 pr-3 text-slate-600">{r.pagesScanned}</td>
+                      <td className="py-2.5 pr-3 text-slate-600 whitespace-nowrap">
+                        {(r.pages?.length ?? 0) > 0 ? (
+                          <button
+                            onClick={() => setOpenRunId(openRunId === r.id ? null : r.id)}
+                            className="underline decoration-dotted underline-offset-2 hover:text-brand-600"
+                            title="Taranan sayfaları göster/gizle"
+                          >
+                            {r.pagesScanned} {openRunId === r.id ? '▾' : '▸'}
+                          </button>
+                        ) : (
+                          r.pagesScanned
+                        )}
+                      </td>
                       <td className="py-2.5 pr-3 text-slate-600">
                         {r.productsFound}
                         <span className="text-xs text-slate-400"> ({r.productsNew} yeni{r.productsRemoved ? ' / ' + r.productsRemoved + ' kaldırıldı' : ''})</span>
@@ -376,6 +416,14 @@ export default function CatalogPage() {
                         </span>
                       </td>
                     </tr>
+                    {openRunId === r.id && (r.pages?.length ?? 0) > 0 && (
+                      <tr className="border-b border-slate-50 last:border-0">
+                        <td colSpan={7} className="pb-3">
+                          <PageList pages={r.pages} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

@@ -153,6 +153,7 @@ model ScanRun {
   productsRemoved Int    @default(0)
   combosCreated   Int    @default(0)
   error           String?
+  pages           String @default("[]") // taranan sayfa URL'leri (JSON dizi, üst sınırlı)
 
   startedAt  DateTime  @default(now())
   finishedAt DateTime?

@@ -74,7 +74,12 @@ export async function catalogRoutes(app: FastifyInstance) {
     });
 
     return {
-      runs,
+      // pages JSON string olarak saklanır; panel için diziye açılır
+      runs: runs.map((r) => {
+        let pages: string[] = [];
+        try { pages = JSON.parse(r.pages || '[]'); } catch { /* bozuk kayıt boş liste sayılır */ }
+        return { ...r, pages };
+      }),
       health: {
         lastSuccessAt: lastSuccess?.finishedAt ?? null,
         lastErrorAt: runs.find((r) => r.state === 'error')?.finishedAt ?? null,

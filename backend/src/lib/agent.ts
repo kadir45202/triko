@@ -35,10 +35,13 @@ export type ScanStatus = {
   productsFound: number;
   productsNew: number;
   combosCreated: number;
+  pages: string[]; // taranan sayfa URL'leri (canlı izleme + geçmiş için)
   startedAt: string;
   finishedAt?: string;
   error?: string;
 };
+
+const MAX_TRACKED_PAGES = 300; // panelde gösterilecek/saklanacak URL üst sınırı
 
 const scanJobs = new Map<string, ScanStatus>();
 
@@ -470,6 +473,7 @@ export async function runScan(
     productsFound: 0,
     productsNew: 0,
     combosCreated: 0,
+    pages: [],
     startedAt: new Date().toISOString(),
   };
   scanJobs.set(customerId, status);
@@ -490,6 +494,7 @@ export async function runScan(
 
     if (platform) {
       status.pagesScanned = platform.requests;
+      status.pages = platform.urls.slice(0, MAX_TRACKED_PAGES);
       await logAgent(
         customerId,
         'platform_detected',
@@ -511,6 +516,7 @@ export async function runScan(
       status.step = 'Site linkleri adım adım geziliyor';
       const crawl = await crawlSite(siteUrl, async (pageUrl, html) => {
         status.pagesScanned++;
+        if (status.pages.length < MAX_TRACKED_PAGES) status.pages.push(pageUrl);
         status.step = status.pagesScanned + ' sayfa tarandı, ' + status.productsFound + ' ürün görüldü';
         const found = extractProducts(html, pageUrl);
         for (const raw of found) {
@@ -565,6 +571,7 @@ export async function runScan(
         productsNew: status.productsNew,
         productsRemoved,
         combosCreated: status.combosCreated,
+        pages: JSON.stringify(status.pages),
         finishedAt: new Date(),
       },
     });
@@ -572,7 +579,7 @@ export async function runScan(
       customerId,
       'scan_finished',
       `Tarama bitti: ${status.pagesScanned} sayfa, ${status.productsNew} yeni ürün, ${status.combosCreated} yeni kombin`,
-      { ...status },
+      { ...status, pages: undefined }, // URL listesi ScanRun'da; aktivite meta'sını şişirme
     );
   } catch (err) {
     status.state = 'error';
@@ -589,6 +596,7 @@ export async function runScan(
           productsNew: status.productsNew,
           productsRemoved,
           combosCreated: status.combosCreated,
+          pages: JSON.stringify(status.pages),
           finishedAt: new Date(),
         },
       })

@@ -94,6 +94,7 @@ export type PlatformCatalog = {
   platform: 'shopify' | 'woocommerce';
   products: RawProduct[];
   requests: number;
+  urls: string[]; // yapılan API isteklerinin adresleri (panelde "taranan sayfalar")
 };
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -102,10 +103,13 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 
 async function shopifyCatalog(origin: string): Promise<PlatformCatalog | null> {
   const products: RawProduct[] = [];
+  const urls: string[] = [];
   let requests = 0;
   for (let page = 1; page <= MAX_API_PAGES; page++) {
-    const data = asRecord(await fetchJson(`${origin}/products.json?limit=250&page=${page}`));
+    const reqUrl = `${origin}/products.json?limit=250&page=${page}`;
+    const data = asRecord(await fetchJson(reqUrl));
     requests++;
+    urls.push(reqUrl);
     if (!data || !Array.isArray(data.products)) break;
     const batch = data.products as unknown[];
     if (!batch.length) break;
@@ -127,7 +131,7 @@ async function shopifyCatalog(origin: string): Promise<PlatformCatalog | null> {
     if (batch.length < 250) break;
     await sleep(CRAWL_DELAY_MS);
   }
-  return products.length ? { platform: 'shopify', products, requests } : null;
+  return products.length ? { platform: 'shopify', products, requests, urls } : null;
 }
 
 // Store API fiyatları alt birim cinsinden string döner ("129990" + minor_unit 2)
@@ -150,10 +154,13 @@ async function wooCatalog(origin: string): Promise<PlatformCatalog | null> {
   for (const base of bases) {
     const sep = base.includes('?') ? '&' : '?';
     const products: RawProduct[] = [];
+    const urls: string[] = [];
     let requests = 0;
     for (let page = 1; page <= MAX_API_PAGES; page++) {
-      const data = await fetchJson(`${base}${sep}per_page=100&page=${page}`);
+      const reqUrl = `${base}${sep}per_page=100&page=${page}`;
+      const data = await fetchJson(reqUrl);
       requests++;
+      urls.push(reqUrl);
       if (!Array.isArray(data) || !data.length) break;
       let valid = 0;
       for (const item of data) {
@@ -177,7 +184,7 @@ async function wooCatalog(origin: string): Promise<PlatformCatalog | null> {
       if (data.length < 100) break;
       await sleep(CRAWL_DELAY_MS);
     }
-    if (products.length) return { platform: 'woocommerce', products, requests };
+    if (products.length) return { platform: 'woocommerce', products, requests, urls };
   }
   return null;
 }
