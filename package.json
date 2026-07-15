@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "start": "node server/server.js",
-    "check": "node --check widget/widget.js && node --check store/assets/products.js && node --check server/server.js && echo 'SYNTAX OK'"
+    "check": "node --check widget/widget.js && node --check store/assets/products.js && node --check server/server.js && node --check qa/smoke.spec.mjs && echo 'SYNTAX OK'",
+    "qa": "playwright test qa/smoke.spec.mjs"
   },
   "engines": {
     "node": ">=18"

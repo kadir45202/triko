@@ -60,6 +60,27 @@ export function fetchText(url: string): Promise<string | null> {
   return fetchBody(url, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', MAX_BODY_BYTES);
 }
 
+// Ön-kontrol (preflight) için: gövdeyle birlikte HTTP durum kodunu da döndürür,
+// böylece "engellendi" (403/429) ile "erişilemez" (ağ hatası) ayırt edilebilir.
+// status 0 = ağ hatası/zaman aşımı.
+export async function fetchWithStatus(url: string): Promise<{ status: number; body: string | null }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: 'follow',
+      headers: { ...REQUEST_HEADERS, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' },
+    });
+    const text = await res.text();
+    return { status: res.status, body: text.length > MAX_BODY_BYTES ? text.slice(0, MAX_BODY_BYTES) : text };
+  } catch {
+    return { status: 0, body: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchJson(url: string): Promise<unknown | null> {
   const body = await fetchBody(url, 'application/json,*/*;q=0.5', MAX_JSON_BYTES);
   if (!body) return null;

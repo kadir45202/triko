@@ -4,17 +4,9 @@ import { cacheGet, cacheSet } from '../lib/cache';
 import { rateLimitOk } from '../lib/rateLimit';
 import { ProductLite, recommend } from '../lib/recommend';
 import { originAllowed } from '../lib/domains';
+import { urlMatches } from '../lib/urlmatch';
 
 const EVENT_TYPE = /^[a-z][a-z0-9_]{2,39}$/;
-
-function urlMatches(pattern: string, url: string): boolean {
-  if (!pattern) return true;
-  try {
-    return new RegExp(pattern).test(url);
-  } catch {
-    return url.includes(pattern);
-  }
-}
 
 export async function widgetRoutes(app: FastifyInstance) {
   // Sayfaya özel widget konfigürasyonu — 5 dk cache

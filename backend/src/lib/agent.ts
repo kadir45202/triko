@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './prisma';
 import { cacheDel } from './cache';
 import { MAX_PAGES, RawProduct, crawlSite, extractProducts, fetchPlatformProducts } from './crawler';
+import { planLimits } from './plan';
 
 const MODEL = 'claude-haiku-4-5'; // spec'in maliyet tercihi (recommend.ts ile aynı)
 
@@ -51,6 +52,43 @@ export function getScanStatus(customerId: string): ScanStatus | null {
 
 export function isScanRunning(customerId: string): boolean {
   return scanJobs.get(customerId)?.state === 'running';
+}
+
+// Canlı (bellek) durum yoksa son taramayı DB'den (ScanRun) getir — durum sunucu
+// yeniden başlasa da kaybolmaz, panel geçmişi tutarlı gösterir (#4).
+export async function latestScanStatus(customerId: string): Promise<ScanStatus | null> {
+  const mem = scanJobs.get(customerId);
+  if (mem) return mem;
+  const run = await prisma.scanRun.findFirst({
+    where: { customerId },
+    orderBy: { startedAt: 'desc' },
+  });
+  if (!run) return null;
+  let pages: string[] = [];
+  try { pages = JSON.parse(run.pages || '[]'); } catch { /* bozuk kayıt boş liste */ }
+  const state: ScanStatus['state'] = run.state === 'running' ? 'running' : run.state === 'error' ? 'error' : 'done';
+  return {
+    state,
+    step: state === 'done' ? 'Tamamlandı' : state === 'error' ? 'Hata: ' + (run.error || 'bilinmiyor') : 'Devam ediyor',
+    pagesScanned: run.pagesScanned,
+    productsFound: run.productsFound,
+    productsNew: run.productsNew,
+    combosCreated: run.combosCreated,
+    pages,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt ? run.finishedAt.toISOString() : undefined,
+    error: run.error || undefined,
+  };
+}
+
+// Açılışta: önceki süreç çökmeden/yeniden başlamadan önce "running" kalmış
+// taramaları toparla (bellek durumu gittiği için asla bitmezler). #4 dayanıklılık.
+export async function recoverStuckScans(): Promise<number> {
+  const r = await prisma.scanRun.updateMany({
+    where: { state: 'running' },
+    data: { state: 'error', error: 'interrupted_restart', finishedAt: new Date() },
+  });
+  return r.count;
 }
 
 // ---------- zenginleştirme ----------
@@ -232,6 +270,7 @@ type ProductRow = {
   id: string; externalId: string; url: string; name: string;
   price: number | null; imageUrl: string | null;
   category: string | null; color: string | null; styleTags: string;
+  season?: string | null;
 };
 
 // Hangi kategori hangi kategoriyle kombinlenir
@@ -247,13 +286,27 @@ const COMPLEMENTS: Record<string, string[]> = {
 
 const NEUTRALS = new Set(['siyah', 'beyaz', 'bej', 'gri', 'krem', 'ekru', 'lacivert']);
 
-function shareTag(a: string, b: string): boolean {
+function parseTags(json: string): string[] {
   try {
-    const ta = new Set(JSON.parse(a) as string[]);
-    return (JSON.parse(b) as string[]).some((t) => ta.has(t));
+    const t = JSON.parse(json) as unknown;
+    return Array.isArray(t) ? (t as string[]) : [];
   } catch {
-    return false;
+    return [];
   }
+}
+
+function shareTag(a: string, b: string): boolean {
+  const ta = new Set(parseTags(a));
+  return parseTags(b).some((t) => ta.has(t));
+}
+
+// Formalite seviyesi: bir gece elbisesinin yanına spor ayakkabı önermeyelim.
+// gece/ofis → şık; spor/plaj → günlük; diğerleri nötr (her ikisiyle de gider).
+function formalityOf(styleTagsJson: string): 'sik' | 'gunluk' | 'notr' {
+  const tags = parseTags(styleTagsJson);
+  if (tags.includes('gece') || tags.includes('ofis')) return 'sik';
+  if (tags.includes('spor') || tags.includes('plaj')) return 'gunluk';
+  return 'notr';
 }
 
 export type ComboPlan = { baseId: string; suggestId: string; text: string };
@@ -262,7 +315,33 @@ const TEXT_TEMPLATES = [
   (s: string) => 'Bu parçaya ' + s + ' çok yakışır — birlikte dene! ✨',
   (s: string) => s + ' ile bu ikili kombinin yıldızı olur!',
   (s: string) => 'Stil ipucu: yanına ' + s + ' ekle, görünüm tamamlansın!',
+  (s: string) => s + ' bu kombini bir üst seviyeye taşır 👌',
 ];
+
+// Bir kombin adayını puanla. Yüksek = daha uyumlu. Yalnız kategori+renk değil;
+// formalite ve mevsim tutarlılığını da tartar ve uyumsuzlukları cezalandırır ki
+// "şık mı" kararı verilebilsin (zayıf/çelişkili kombinler eşiğin altında elenir).
+function scorePair(base: ProductRow, p: ProductRow): number {
+  let score = 2; // geçerli tamamlayıcı kategori tabanı
+  // renk uyumu
+  if (base.color && p.color === base.color) score += 2;
+  else if (p.color && NEUTRALS.has(p.color)) score += 1;
+  // stil etiketi ortaklığı
+  if (shareTag(base.styleTags, p.styleTags)) score += 2;
+  // formalite: aynı seviye güçlü artı, zıt (şık↔günlük) ağır ceza
+  const fb = formalityOf(base.styleTags);
+  const fp = formalityOf(p.styleTags);
+  if (fb !== 'notr' && fp !== 'notr') score += fb === fp ? 2 : -4;
+  // mevsim: aynı artı, zıt (yaz↔kış) ceza; mevsimlik nötr
+  const sb = base.season;
+  const sp = p.season;
+  if (sb && sp && sb !== 'mevsimlik' && sp !== 'mevsimlik') score += sb === sp ? 1 : -3;
+  // benzer fiyat segmenti (aşırı uçuruma düşme)
+  if (base.price && p.price && Math.abs(p.price - base.price) / base.price < 1) score += 1;
+  return score;
+}
+
+const COMBO_SCORE_FLOOR = 3; // tabanın (2) üstünde en az bir olumlu sinyal şart
 
 export function ruleBasedCombos(products: ProductRow[], maxPerBase = 2): ComboPlan[] {
   const plans: ComboPlan[] = [];
@@ -272,14 +351,8 @@ export function ruleBasedCombos(products: ProductRow[], maxPerBase = 2): ComboPl
     if (!wanted.length) continue;
     const scored = products
       .filter((p) => p.id !== base.id && p.category && wanted.includes(p.category))
-      .map((p) => {
-        let score = 0;
-        if (base.color && p.color === base.color) score += 2;
-        else if (p.color && NEUTRALS.has(p.color)) score += 1;
-        if (shareTag(base.styleTags, p.styleTags)) score += 2;
-        if (base.price && p.price && Math.abs(p.price - base.price) / base.price < 1) score += 1;
-        return { p, score };
-      })
+      .map((p) => ({ p, score: scorePair(base, p) }))
+      .filter((x) => x.score >= COMBO_SCORE_FLOOR) // zayıf/uyumsuz kombinleri ele
       .sort((a, b) => b.score - a.score)
       .slice(0, maxPerBase);
     for (const { p } of scored) {
@@ -314,14 +387,18 @@ async function aiCombos(products: ProductRow[]): Promise<ComboPlan[]> {
   const client = new Anthropic();
   const lines = products.map(
     (p) =>
-      `- id: ${p.id} | ${p.name} | ${p.category} | ${p.color || '?'} | ${p.styleTags} | ${p.price ?? '?'} TL`,
+      `- id: ${p.id} | ${p.name} | ${p.category} | ${p.color || '?'} | ${p.styleTags} | ${p.season || '?'} | ${p.price ?? '?'} TL`,
   );
   const prompt =
     'Sen bir moda stilistisin. Aşağıdaki katalogdan kombin önerileri üret.\n' +
+    'Katalog satırı: id | ad | kategori | renk | stil etiketleri | mevsim | fiyat\n' +
     'Kurallar:\n' +
     '- baseId: müşterinin baktığı ürün, suggestId: yanına önerilecek TAMAMLAYICI ürün.\n' +
     '- Aynı kategoriden iki ürünü asla eşleştirme (elbise+elbise olmaz).\n' +
     '- Renk ve stil uyumuna dikkat et (nötr renkler her şeyle gider).\n' +
+    '- FORMALİTE tutarlı olsun: şık/gece parçayı spor parçayla eşleştirme (gece elbisesi + spor ayakkabı OLMAZ).\n' +
+    '- MEVSİM tutarlı olsun: yazlık parçayı kışlık parçayla eşleştirme (şort + kaban olmaz).\n' +
+    '- Zorlama; gerçekten yakışmayan bir eş yoksa o ürün için öneri üretme (kaliteyi say, sayıyı değil).\n' +
     '- Her base için en fazla 2 öneri; toplam en fazla ' + Math.min(products.length * 2, 40) + ' kombin.\n' +
     '- text: maskotun söyleyeceği enerjik, samimi Türkçe cümle (max 90 karakter, 1 emoji serbest).\n\nKatalog:\n' +
     lines.join('\n');
@@ -438,7 +515,8 @@ export async function upsertProduct(
   customerId: string,
   raw: RawProduct,
   source: 'crawl' | 'jsonld',
-): Promise<{ id: string; isNew: boolean }> {
+  opts: { capReached?: boolean } = {},
+): Promise<{ id: string; isNew: boolean; skipped?: boolean }> {
   const existing = await prisma.product.findUnique({
     where: { customerId_externalId: { customerId, externalId: raw.externalId } },
   });
@@ -457,6 +535,8 @@ export async function upsertProduct(
     });
     return { id: existing.id, isNew: false };
   }
+  // Plan ürün kotası dolduysa YENİ ürün eklenmez (mevcutlar güncellenmeye devam eder)
+  if (opts.capReached) return { id: '', isNew: false, skipped: true };
   const created = await prisma.product.create({
     data: {
       customerId,
@@ -507,6 +587,15 @@ export async function runScan(
   let productsRemoved = 0;
   await logAgent(customerId, 'scan_started', 'Site taraması başladı: ' + siteUrl, { siteUrl, trigger });
 
+  // Plan ürün kotası: yeni ürün eklemeyi üst sınırda durdur (mevcutlar güncellenir).
+  const capCustomer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { plan: true, planExpiresAt: true },
+  });
+  const productCap = capCustomer ? planLimits(capCustomer).maxProducts : Infinity;
+  let activeCount = await prisma.product.count({ where: { customerId, status: 'active' } });
+  let productsCapped = 0;
+
   try {
     const seenExternalIds = new Set<string>();
     let crawlComplete = false;
@@ -527,11 +616,12 @@ export async function runScan(
         { platform: platform.platform, count: platform.products.length },
       );
       for (const raw of platform.products) {
-        seenExternalIds.add(raw.externalId);
         status.productsFound++;
         status.step = status.productsFound + ' ürün işlendi (' + platform.platform + ' API)';
-        const { isNew } = await upsertProduct(customerId, raw, 'crawl');
-        if (isNew) status.productsNew++;
+        const { isNew, skipped } = await upsertProduct(customerId, raw, 'crawl', { capReached: activeCount >= productCap });
+        if (skipped) { productsCapped++; continue; }
+        seenExternalIds.add(raw.externalId);
+        if (isNew) { status.productsNew++; activeCount++; }
       }
       // API kataloğun tamamını verdi → görünmeyen ürünler gerçekten kalkmış
       crawlComplete = true;
@@ -544,10 +634,11 @@ export async function runScan(
         status.step = status.pagesScanned + ' sayfa tarandı, ' + status.productsFound + ' ürün görüldü';
         const found = extractProducts(html, pageUrl);
         for (const raw of found) {
-          seenExternalIds.add(raw.externalId);
           status.productsFound++;
-          const { isNew } = await upsertProduct(customerId, raw, 'crawl');
-          if (isNew) status.productsNew++;
+          const { isNew, skipped } = await upsertProduct(customerId, raw, 'crawl', { capReached: activeCount >= productCap });
+          if (skipped) { productsCapped++; continue; }
+          seenExternalIds.add(raw.externalId);
+          if (isNew) { status.productsNew++; activeCount++; }
         }
       });
       // Hiç sayfa çekilemedi → adres yanlış ya da site erişilemez
@@ -575,6 +666,12 @@ export async function runScan(
         });
       }
       if (gone.length) await invalidateWidgetCache(customerId);
+    }
+
+    if (productsCapped > 0) {
+      await logAgent(customerId, 'plan_limit',
+        productsCapped + ' ürün plan sınırına (' + productCap + ') takıldı ve eklenmedi',
+        { cap: productCap, capped: productsCapped });
     }
 
     status.step = 'Ürünler kategorize ediliyor';
@@ -633,9 +730,11 @@ export async function runScan(
 export async function rescanAll(): Promise<void> {
   const customers = await prisma.customer.findMany({
     where: { siteUrl: { not: null } },
-    select: { id: true, siteUrl: true },
+    select: { id: true, siteUrl: true, plan: true, planExpiresAt: true },
   });
   for (const c of customers) {
+    // Periyodik fark taraması yalnız izin veren planlarda (STARTER'da kapalı)
+    if (!planLimits(c).periodicRescan) continue;
     if (c.siteUrl && !isScanRunning(c.id)) await runScan(c.id, c.siteUrl, 'scheduled');
   }
 }

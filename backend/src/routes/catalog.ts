@@ -5,13 +5,15 @@ import { prisma } from '../lib/prisma';
 import { rateLimitOk } from '../lib/rateLimit';
 import { originAllowed } from '../lib/domains';
 import {
-  getScanStatus,
   handleNewProduct,
   isScanRunning,
+  latestScanStatus,
   runScan,
   upsertProduct,
 } from '../lib/agent';
 import { externalIdFromUrl } from '../lib/crawler';
+import { diagnoseSite } from '../lib/preflight';
+import { effectivePlan, planLimits } from '../lib/plan';
 
 export async function catalogRoutes(app: FastifyInstance) {
   // Tam site taraması başlat (Faz A). siteUrl müşteriye kaydedilir ki
@@ -23,9 +25,42 @@ export async function catalogRoutes(app: FastifyInstance) {
     }
     if (isScanRunning(req.customerId)) return reply.code(409).send({ error: 'scan_already_running' });
 
+    // Plan: gün başına tam tarama limiti (#7)
+    const customer = await prisma.customer.findUnique({
+      where: { id: req.customerId },
+      select: { plan: true, planExpiresAt: true },
+    });
+    const limits = planLimits(customer!);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const todayScans = await prisma.scanRun.count({
+      where: { customerId: req.customerId, startedAt: { gte: startOfDay } },
+    });
+    if (todayScans >= limits.maxScansPerDay) {
+      return reply.code(429).send({
+        error: 'plan_scan_limit',
+        plan: effectivePlan(customer!),
+        limit: limits.maxScansPerDay,
+        used: todayScans,
+      });
+    }
+
     await prisma.customer.update({ where: { id: req.customerId }, data: { siteUrl } });
     void runScan(req.customerId, siteUrl); // arka planda; durum /status'tan izlenir
     return { started: true };
+  });
+
+  // Ön-kontrol (#3): tarama başlatmadan sitenin taranabilirliğini teşhis et.
+  // Panel "✅ taranabilir / ⚠️ SPA riski / ❌ engellendi" gösterebilsin diye.
+  app.post('/api/catalog/preflight', { preHandler: app.authGuard }, async (req, reply) => {
+    const { siteUrl } = (req.body || {}) as { siteUrl?: string };
+    if (!siteUrl || !/^https?:\/\//i.test(siteUrl)) {
+      return reply.code(400).send({ error: 'valid_siteUrl_required' });
+    }
+    if (!rateLimitOk('preflight:' + req.customerId, 10, 60_000)) {
+      return reply.code(429).send({ error: 'rate_limited' });
+    }
+    return diagnoseSite(siteUrl);
   });
 
   app.get('/api/catalog/status', { preHandler: app.authGuard }, async (req) => {
@@ -36,7 +71,7 @@ export async function catalogRoutes(app: FastifyInstance) {
     return {
       siteUrl: customer?.siteUrl ?? null,
       autoPublishCombos: customer?.autoPublishCombos ?? true,
-      scan: getScanStatus(req.customerId),
+      scan: await latestScanStatus(req.customerId),
     };
   });
 
@@ -133,12 +168,16 @@ export async function catalogRoutes(app: FastifyInstance) {
 
     const customer = await prisma.customer.findUnique({
       where: { token },
-      select: { id: true, allowedDomains: true },
+      select: { id: true, allowedDomains: true, plan: true, planExpiresAt: true },
     });
     if (!customer) return reply.code(404).send({ error: 'not_found' });
     if (!originAllowed(req, customer.allowedDomains)) return reply.code(403).send({ error: 'domain_not_allowed' });
 
-    const { isNew } = await upsertProduct(
+    // Plan ürün kotası: dolu ise yeni ürün alınmaz (mevcut güncellenir)
+    const activeCount = await prisma.product.count({ where: { customerId: customer.id, status: 'active' } });
+    const capReached = activeCount >= planLimits(customer).maxProducts;
+
+    const { isNew, skipped } = await upsertProduct(
       customer.id,
       {
         externalId: String(product.id || externalIdFromUrl(product.url)).slice(0, 120),
@@ -150,7 +189,9 @@ export async function catalogRoutes(app: FastifyInstance) {
         rawCategory: product.category ? String(product.category).slice(0, 100) : null,
       },
       'jsonld',
+      { capReached },
     );
+    if (skipped) return { ok: true, capped: true }; // plan sınırı — ürün eklenmedi
     // Yeni ürünse ajan arka planda öğrenir: kategorize eder, kombinlere dahil eder
     if (isNew) void handleNewProduct(customer.id).catch(() => {});
     return { ok: true, known: !isNew };

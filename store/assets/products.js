@@ -126,7 +126,10 @@
       '<a class="card" href="urun.html?id=' + p.id + '">' +
         '<div class="frame product-photo" style="background:' + p.gradient + '">' +
           (p.tag ? '<span class="tag">' + p.tag + '</span>' : '') +
-          (p.img ? '<img src="' + p.img + '" alt="' + p.name + '" loading="lazy">' : p.visual) +
+          // Emoji hep altta durur; görsel varsa üstüne biner. Uzak (taranan)
+          // görsel yüklenmezse onerror ile kaldırılır → emoji görünür (bozuk resim yok).
+          (p.visual || '') +
+          (p.img ? '<img src="' + p.img + '" alt="' + p.name + '" loading="lazy" onerror="this.remove()">' : '') +
         '</div>' +
         '<div class="meta">' +
           '<div class="name">' + p.name + '</div>' +
@@ -173,6 +176,21 @@
     'aksesuar':  ['elbise', 'ust-giyim', 'dis-giyim', 'alt-giyim'],
   };
   var NEUTRALS = { 'siyah': 1, 'beyaz': 1, 'bej': 1, 'gri': 1, 'krem': 1, 'ekru': 1, 'lacivert': 1 };
+
+  // "Şık mı" kararı için: ürünün adı+kategorisinden formalite ve mevsim türet.
+  // Böylece gece elbisesinin yanına spor ayakkabı ya da yazlık şortun yanına
+  // kaban önerilmez (uyumsuzlar skorda cezalanır, eşiğin altında elenir).
+  function deriveStyle(p) {
+    var h = ((p.name || '') + ' ' + (p.type || '')).toLowerCase();
+    var sik = /abiye|gece|saten|stiletto|topuklu|blazer|klasik|kolye|loafer|kumaş/.test(h);
+    var gunluk = /tişört|tisort|sweatshirt|sneaker|şort|sort|jean|eşofman|hasır|hasir|polo|beyzbol|keten|bermuda/.test(h);
+    return {
+      formality: sik && !gunluk ? 'sik' : (gunluk && !sik ? 'gunluk' : 'notr'),
+      season: /şort|sort|hasır|hasir|keten|bermuda|sandalet|bikini/.test(h) ? 'yaz'
+        : (/mont|kaban|kazak|triko|palto|\bbot\b|süet|suet|bere/.test(h) ? 'kis' : 'mevsimlik'),
+    };
+  }
+
   var AUTO_TEMPLATES = [
     function (n) { return 'Bu parçaya ' + n + ' çok yakışır — birlikte dene! ✨'; },
     function (n) { return n + ' ile bu ikili kombinin yıldızı olur!'; },
@@ -197,6 +215,7 @@
     // Kombin havuzu ürünün ait olduğu katalog: ATELIER ürünü ATELIER'le,
     // taranan ürün taranan katalogla eşleşir (markalar karışmaz).
     var pool = base.external ? EXTERNAL : CATALOG;
+    var baseStyle = deriveStyle(base);
     var scored = [];
     for (var i = 0; i < pool.length; i++) {
       var p = pool[i];
@@ -209,6 +228,15 @@
       else if (p.color && NEUTRALS[p.color]) score += 1;             // nötr her şeyle gider
       if (base.priceNum && p.priceNum &&
           Math.abs(p.priceNum - base.priceNum) / base.priceNum < 1) score += 1; // fiyat seviyesi yakın
+      var ps = deriveStyle(p);
+      // formalite: aynı seviye artı, zıt (şık↔günlük) ağır ceza
+      if (baseStyle.formality !== 'notr' && ps.formality !== 'notr') {
+        score += (baseStyle.formality === ps.formality) ? 2 : -4;
+      }
+      // mevsim: aynı artı, zıt (yaz↔kış) ceza; mevsimlik nötr
+      if (baseStyle.season !== 'mevsimlik' && ps.season !== 'mevsimlik') {
+        score += (baseStyle.season === ps.season) ? 1 : -3;
+      }
       scored.push({ p: p, score: score });
     }
     scored.sort(function (a, b) { return b.score - a.score; });
@@ -216,6 +244,7 @@
     var out = [];
     var seenName = {}; // aynı isimli ürünü (ör. taranan renk varyantları) tekrar önerme
     for (var j = 0; j < scored.length && out.length < limit; j++) {
+      if (scored[j].score <= 0) break; // uyumsuz (formalite/mevsim çelişkisi) kombinleri gösterme
       var s = scored[j].p;
       var nameKey = (s.name || '').toLowerCase();
       if (seenName[nameKey]) continue;

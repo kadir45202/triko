@@ -1180,6 +1180,13 @@
       var img = document.createElement('img');
       img.src = combo.suggestedProductImage;
       img.alt = '';
+      // Uzak (taranan) görsel yüklenmezse emojiye düş — bozuk resim gösterme
+      img.onerror = function () {
+        var em = document.createElement('span');
+        em.className = 'maskot-mini-emoji';
+        em.textContent = combo.suggestedProductEmoji || '🛍️';
+        if (img.parentNode) img.parentNode.replaceChild(em, img);
+      };
       el.appendChild(img);
     } else {
       var em = document.createElement('span');
@@ -1272,6 +1279,12 @@
       var img = document.createElement('img');
       img.src = combo.suggestedProductImage;
       img.alt = combo.suggestedProductName;
+      img.onerror = function () {
+        var em = document.createElement('span');
+        em.className = 'maskot-mini-emoji';
+        em.textContent = combo.suggestedProductEmoji || '🛍️';
+        if (img.parentNode) img.parentNode.replaceChild(em, img);
+      };
       miniCardEl.appendChild(img);
     } else {
       var em = document.createElement('span');
@@ -1574,6 +1587,10 @@
       var img = document.createElement('img');
       img.src = combo.suggestedProductImage;
       img.alt = combo.suggestedProductName;
+      img.onerror = function () {
+        if (img.parentNode) img.parentNode.removeChild(img);
+        visual.textContent = combo.suggestedProductEmoji || '🛍️';
+      };
       visual.appendChild(img);
     } else {
       visual.textContent = combo.suggestedProductEmoji || '🛍️';

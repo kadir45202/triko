@@ -7,7 +7,7 @@ import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { prisma } from '../src/lib/prisma';
 import { hashPassword } from '../src/lib/password';
-import { generateCombos } from '../src/lib/agent';
+import { generateCombos, latestScanStatus, recoverStuckScans } from '../src/lib/agent';
 
 let app: FastifyInstance;
 let customerId: string;
@@ -196,4 +196,42 @@ test('catalog/runs: geçmişi ve sağlığı döner, ardışık hatayı sayar', 
   assert.equal(body.health.lastError, 'sitemap_not_found');
   assert.ok(body.health.lastSuccessAt);
   assert.ok(body.health.nextScheduledAt); // varsayılan 6 saatlik periyot
+});
+
+// ---- #4 dayanıklılık: DB-destekli durum + açılışta stale toparlama ----
+
+test('latestScanStatus: bellek boşken son taramayı DB\'den döndürür (restart sonrası)', async () => {
+  await prisma.scanRun.deleteMany({ where: { customerId } });
+  await prisma.scanRun.create({
+    data: {
+      customerId, siteUrl: 'https://kuyruk.test', trigger: 'manual', state: 'done',
+      pagesScanned: 12, productsFound: 9, productsNew: 5, combosCreated: 3,
+      pages: JSON.stringify(['https://kuyruk.test/a', 'https://kuyruk.test/b']),
+      startedAt: new Date(Date.now() - 60_000), finishedAt: new Date(),
+    },
+  });
+  // Bu müşteri için bellekte canlı iş yok → DB'den map'lenmeli
+  const st = await latestScanStatus(customerId);
+  assert.ok(st);
+  assert.equal(st!.state, 'done');
+  assert.equal(st!.pagesScanned, 12);
+  assert.equal(st!.productsNew, 5);
+  assert.equal(st!.combosCreated, 3);
+  assert.equal(st!.pages.length, 2);
+});
+
+test('recoverStuckScans: running kalmış taramaları interrupted_restart ile kapatır', async () => {
+  await prisma.scanRun.deleteMany({ where: { customerId } });
+  const stuck = await prisma.scanRun.create({
+    data: { customerId, siteUrl: 'https://kuyruk.test', trigger: 'manual', state: 'running' },
+  });
+  const n = await recoverStuckScans();
+  assert.ok(n >= 1);
+  const after = await prisma.scanRun.findUnique({ where: { id: stuck.id } });
+  assert.equal(after!.state, 'error');
+  assert.equal(after!.error, 'interrupted_restart');
+  assert.ok(after!.finishedAt);
+  // toparlanınca durum artık 'running' göstermez
+  const st = await latestScanStatus(customerId);
+  assert.equal(st!.state, 'error');
 });
