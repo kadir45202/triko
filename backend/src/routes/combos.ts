@@ -78,9 +78,11 @@ export async function comboRoutes(app: FastifyInstance) {
       }
       case 'activate':
       case 'deactivate': {
+        // Aktifleştir = onayla + yayınla: pending kombin de canlıya çıksın.
+        // Pasifleştir yalnız isActive'i düşürür, yayın durumunu korur.
         const r = await prisma.combo.updateMany({
           where: { id: { in: ownedIds } },
-          data: { isActive: action === 'activate' },
+          data: action === 'activate' ? { isActive: true, status: 'published' } : { isActive: false },
         });
         affected = r.count;
         break;

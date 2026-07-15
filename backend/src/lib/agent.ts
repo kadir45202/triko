@@ -64,20 +64,41 @@ export type EnrichResult = {
 
 const CATEGORIES = ['ust-giyim', 'alt-giyim', 'elbise', 'dis-giyim', 'ayakkabi', 'canta', 'aksesuar'];
 
+// Sıra önemli: ilk eşleşen kazanır. Giysi kategorileri aksesuardan ÖNCE
+// gelir ki "Kemerli Pantolon" gibi sıfatlar ürünü aksesuar yapmasın; aksesuar
+// en sonda "son çare" olarak durur. Üst giyim, alt giyimden önce gelir ki
+// "Jean Bluz" (denim üst) alt-giyim değil ust-giyim sınıflansın.
 const CATEGORY_KEYWORDS: Array<[RegExp, string]> = [
-  [/elbise/i, 'elbise'],
-  [/trençkot|trenckot|ceket|blazer|mont|kaban|hırka|hirka|palto/i, 'dis-giyim'],
-  [/stiletto|topuklu|sneaker|ayakkabı|ayakkabi|bot|çizme|cizme|sandalet|loafer/i, 'ayakkabi'],
-  [/çanta|canta|clutch|sırt çantası/i, 'canta'],
-  [/şapka|sapka|gözlük|gozluk|saat|kemer|şal|sal|fular|takı|taki|küpe|kupe|kolye|atkı|atki|bere|eldiven/i, 'aksesuar'],
-  [/jean|pantolon|etek|şort|sort|tayt|eşofman altı/i, 'alt-giyim'],
-  [/gömlek|gomlek|bluz|tişört|tisort|t-shirt|kazak|sweatshirt|body|büstiyer|bustiyer|crop|top\b/i, 'ust-giyim'],
+  [/elbise|tulum|gecelik|abiye/i, 'elbise'],
+  [/trençkot|trenckot|ceket|blazer|mont|kaban|hırka|hirka|palto|yağmurluk|yagmurluk/i, 'dis-giyim'],
+  [/stiletto|topuklu|sneaker|ayakkabı|ayakkabi|bot|çizme|cizme|sandalet|loafer|babet|terlik/i, 'ayakkabi'],
+  [/çanta|canta|clutch|sırt çantası|tote|cüzdan|cuzdan/i, 'canta'],
+  [/gömlek|gomlek|bluz|tişört|tisort|t-shirt|kazak|sweatshirt|süveter|suveter|triko|body|badi|büstiyer|bustiyer|korse|bralet|atlet|sütyen|sutyen|kaşkorse|kaskorse|halter|crop|top\b|(^|\s)üst|süveter/i, 'ust-giyim'],
+  [/jean|jeans|kot\b|pantolon|etek|şort|sort|jort|bermuda|tayt|eşofman|jogger|culotte|palazzo|külot|kulot|pantalon/i, 'alt-giyim'],
+  [/şapka|sapka|gözlük|gozluk|\bsaat\b|\bkemer\b|fular|takı|taki|küpe|kupe|kolye|atkı|atki|bere|eldiven|bileklik|broş|bros|şal\b/i, 'aksesuar'],
 ];
 
 const COLOR_WORDS = [
   'siyah', 'beyaz', 'bej', 'gri', 'kırmızı', 'kirmizi', 'mavi', 'lacivert', 'yeşil', 'yesil',
-  'sarı', 'sari', 'mor', 'pembe', 'kahverengi', 'bordo', 'turuncu', 'krem', 'ekru', 'mercan', 'haki',
+  'sarı', 'sari', 'mor', 'pembe', 'kahverengi', 'bordo', 'turuncu', 'krem', 'ekru', 'mercan', 'haki', 'gül', 'gul',
 ];
+
+// ASCII slug varyantlarını kanonik Türkçe renge indir (yesil→yeşil) ki
+// farklı kaynaklardan gelen renkler kombin puanlamasında eşleşsin.
+const COLOR_CANON: Record<string, string> = {
+  yesil: 'yeşil', kirmizi: 'kırmızı', sari: 'sarı', gul: 'gül',
+};
+
+// Rengi ürün adı veya URL slug'ından deterministik çıkar. Koton gibi siteler
+// rengi URL'de yazar (…-saten-klos-etek-yesil-4017811/) ama isimde geçmez —
+// AI/kural bunu kaçırır, bu yüzden token bazlı güvenilir bir yedek.
+function colorFromText(text: string): string | null {
+  const hay = ' ' + text.toLowerCase().replace(/[^a-zçğıöşü]+/gi, ' ') + ' ';
+  for (const c of COLOR_WORDS) {
+    if (hay.indexOf(' ' + c + ' ') !== -1) return COLOR_CANON[c] || c;
+  }
+  return null;
+}
 
 function ruleEnrich(name: string, rawCategory?: string | null): EnrichResult {
   const hay = (name + ' ' + (rawCategory || '')).toLowerCase();
@@ -124,18 +145,19 @@ const ENRICH_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-type EnrichInput = { externalId: string; name: string; rawCategory?: string | null; price?: number | null };
+type EnrichInput = { externalId: string; name: string; rawCategory?: string | null; price?: number | null; url?: string };
 
 async function aiEnrich(items: EnrichInput[]): Promise<Map<string, EnrichResult>> {
   const client = new Anthropic();
   const prompt =
     'Sen bir moda kataloğu editörüsün. Aşağıdaki ürünleri sınıflandır.\n' +
     'Kategoriler: ' + CATEGORIES.join(', ') + '\n' +
-    'color: ürünün baskın rengi Türkçe küçük harf (bilinmiyorsa null).\n' +
+    'category: ürün adına göre en doğru kategori (ör. "Askılı Üst"/"Bluz" → ust-giyim).\n' +
+    'color: ürünün baskın rengi Türkçe küçük harf; ad veya URL slug\'ında renk geçiyorsa onu kullan (bilinmiyorsa null).\n' +
     'styleTags: casual/ofis/gece/spor/plaj arasından 1-3 etiket.\n' +
     'season: yaz/kis/mevsimlik.\n\nÜrünler:\n' +
     items
-      .map((p) => `- externalId: ${p.externalId} | ad: ${p.name} | site kategorisi: ${p.rawCategory || '?'}`)
+      .map((p) => `- externalId: ${p.externalId} | ad: ${p.name} | site kategorisi: ${p.rawCategory || '?'} | url: ${p.url || '?'}`)
       .join('\n');
   const response = await client.messages.create({
     model: MODEL,
@@ -181,11 +203,13 @@ export async function enrichPending(customerId: string): Promise<number> {
     }
     for (const p of batch) {
       const r = results.get(p.externalId) || ruleEnrich(p.name, p.rawCategory);
+      // Renk boşsa ad + URL slug'ından deterministik doldur (en güvenilir sinyal)
+      const color = r.color || colorFromText(p.name + ' ' + (p.url || ''));
       await prisma.product.update({
         where: { id: p.id },
         data: {
           category: r.category,
-          color: r.color,
+          color,
           styleTags: JSON.stringify(r.styleTags),
           season: r.season,
           enriched: true,

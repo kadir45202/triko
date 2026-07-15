@@ -79,6 +79,45 @@ export async function widgetRoutes(app: FastifyInstance) {
     return reply.header('x-cache', 'miss').send(config);
   });
 
+  // Mağaza vitrini için müşterinin aktif kataloğu (public, token ile).
+  // Demo mağaza ızgarasını backend'den besler; 60 sn cache.
+  app.get('/api/widget/catalog', async (req, reply) => {
+    const { token } = req.query as { token?: string };
+    if (!token) return reply.code(400).send({ error: 'token_required' });
+
+    const cacheKey = 'wcat:' + token;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return reply.header('x-cache', 'hit').send(JSON.parse(cached));
+
+    const customer = await prisma.customer.findUnique({ where: { token }, select: { id: true, allowedDomains: true } });
+    if (!customer) return reply.code(404).send({ error: 'not_found' });
+    if (!originAllowed(req, customer.allowedDomains)) return reply.code(403).send({ error: 'domain_not_allowed' });
+
+    const products = await prisma.product.findMany({
+      where: { customerId: customer.id, status: 'active' },
+      orderBy: { createdAt: 'desc' },
+      take: 300,
+      select: {
+        externalId: true, name: true, price: true, currency: true,
+        imageUrl: true, url: true, category: true, color: true,
+      },
+    });
+    const payload = {
+      products: products.map((p) => ({
+        id: p.externalId,
+        name: p.name,
+        price: p.price,
+        currency: p.currency,
+        image: p.imageUrl,
+        url: p.url,
+        category: p.category,
+        color: p.color,
+      })),
+    };
+    await cacheSet(cacheKey, JSON.stringify(payload), 60);
+    return reply.header('x-cache', 'miss').send(payload);
+  });
+
   // "Bunları da seversin" — AI öneri motoru (Faz 5).
   // Oturum başına 10 dk cache; token başına 20 istek/dk rate limit.
   app.post('/api/widget/recommendations', async (req, reply) => {

@@ -61,6 +61,14 @@
     <div class="grid" id="new-grid"></div>
   </section>
 
+  <section class="section" id="scanned-section" style="display:none">
+    <div class="section-head">
+      <h2>🤖 Katalogdan Taranan Ürünler</h2>
+      <p>Triko ajanının canlı mağaza kataloğundan keşfettiği parçalar</p>
+    </div>
+    <div class="grid" id="scanned-grid"></div>
+  </section>
+
   <footer>
     <span class="flogo">ATELIER.</span>
     <span>Demo mağaza — hiçbir şey satılmaz, her şey kombinlenir · AI Maskot test ortamı</span>
@@ -70,12 +78,18 @@
   <script src="assets/catalog-data.js"></script>
   <script src="assets/products.js"></script>
   <script>
-    ATELIER.renderGrid('featured-grid', function (p) {
-      return ['e-tisort', 'k-elbise-midi', 'e-sneaker', 'k-canta'].indexOf(p.id) !== -1;
+    ATELIER.ready(function () {
+      ATELIER.renderGrid('featured-grid', function (p) {
+        return ['e-tisort', 'k-elbise-midi', 'e-sneaker', 'k-canta'].indexOf(p.id) !== -1;
+      });
+      ATELIER.renderGrid('new-grid', function (p) { return p.tag === 'Yeni' || p.tag === 'Yaz'; }, 4);
+      // Backend ajanı taradıysa ayrı bölümü doldur ve göster (yoksa gizli kalır)
+      if (ATELIER.renderExternal('scanned-grid', 8)) {
+        document.getElementById('scanned-section').style.display = '';
+      }
+      // Anasayfa: öne çıkan ürünlerin kombinleriyle maskot
+      ATELIER.initMascot({ productIds: ['e-tisort', 'k-elbise-midi'] });
     });
-    ATELIER.renderGrid('new-grid', function (p) { return p.tag === 'Yeni' || p.tag === 'Yaz'; }, 4);
-    // Anasayfa: öne çıkan ürünlerin kombinleriyle maskot
-    ATELIER.initMascot({ productIds: ['e-tisort', 'k-elbise-midi'] });
   </script>
 </body>
 </html>

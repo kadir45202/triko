@@ -41,9 +41,11 @@
   <script src="assets/catalog-data.js"></script>
   <script src="assets/products.js"></script>
   <script>
-    ATELIER.renderGrid('kadin-grid', function (p) { return p.cat === 'kadin'; });
-    // Kategori sayfası: kadın kombinleriyle maskot
-    ATELIER.initMascot({ productIds: ['k-elbise-midi', 'k-trenckot', 'k-gunes-gozlugu'] });
+    ATELIER.ready(function () {
+      ATELIER.renderGrid('kadin-grid', function (p) { return p.cat === 'kadin'; });
+      // Kategori sayfası: kadın kombinleriyle maskot
+      ATELIER.initMascot({ productIds: ['k-elbise-midi', 'k-trenckot', 'k-gunes-gozlugu'] });
+    });
   </script>
 </body>
 </html>

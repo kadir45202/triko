@@ -39,7 +39,7 @@
   <script src="assets/catalog-data.js"></script>
   <script src="assets/products.js"></script>
   <script>
-    (function () {
+    ATELIER.ready(function () {
       var params = new URLSearchParams(window.location.search);
       var id = params.get('id') || 'e-tisort';
       var p = ATELIER.byId(id) || ATELIER.byId('e-tisort');
@@ -82,7 +82,7 @@
 
       // Maskot: bu ürüne özel kombinlerle başlat
       ATELIER.initMascot({ productId: p.id });
-    })();
+    });
   </script>
 </body>
 </html>

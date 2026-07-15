@@ -1654,6 +1654,7 @@
   // ---------------------------------------------------------------
   var init = safely(function () {
     // Config öncelik sırası: DEFAULT < API config < sayfanın window.MASKOT_CONFIG'i
+    // (İstisna: kombinler — backend yayınlanmış kombin döndürürse statik olanları ezer; bkz. applyConfig)
     var script = document.currentScript || document.querySelector('script[data-token]');
     var token = (script && script.getAttribute('data-token')) || 'demo';
     state.apiBase = (script && script.getAttribute('data-api')) || null;
@@ -1697,10 +1698,18 @@
     };
 
     var applyConfig = function (apiCfg) {
+      var normApi = normalizeApiConfig(apiCfg || null);
       CONFIG = mergeConfig(
-        mergeConfig(DEFAULT_CONFIG, normalizeApiConfig(apiCfg || null)),
+        mergeConfig(DEFAULT_CONFIG, normApi),
         window.MASKOT_CONFIG || null
       );
+      // Maskot görünümü/davranışı için sayfanın MASKOT_CONFIG'i son sözü söyler
+      // (yukarıdaki merge). Kombinler için ise backend kaynak-doğrudur:
+      // panelde onaylanıp yayınlanan kombinler geldiyse sayfanın statik
+      // MASKOT_CONFIG.combos'unu ezerler. Backend kapalı/boşsa statik yedek kalır.
+      if (normApi && normApi.combos && normApi.combos.length) {
+        CONFIG.combos = normApi.combos;
+      }
       CONFIG.token = token || CONFIG.token;
     };
 

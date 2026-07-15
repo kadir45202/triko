@@ -57,7 +57,9 @@
   <script src="assets/products.js"></script>
   <script>
     // Lookbook: karışık seçki kombinleriyle maskot
-    ATELIER.initMascot({ productIds: ['k-elbise-midi', 'e-gomlek', 'e-sneaker', 'k-hasir-sapka'] });
+    ATELIER.ready(function () {
+      ATELIER.initMascot({ productIds: ['k-elbise-midi', 'e-gomlek', 'e-sneaker', 'k-hasir-sapka'] });
+    });
   </script>
 </body>
 </html>

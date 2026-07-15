@@ -41,9 +41,11 @@
   <script src="assets/catalog-data.js"></script>
   <script src="assets/products.js"></script>
   <script>
-    ATELIER.renderGrid('erkek-grid', function (p) { return p.cat === 'erkek'; });
-    // Kategori sayfası: erkek kombinleriyle maskot
-    ATELIER.initMascot({ productIds: ['e-tisort', 'e-gomlek', 'e-jean'] });
+    ATELIER.ready(function () {
+      ATELIER.renderGrid('erkek-grid', function (p) { return p.cat === 'erkek'; });
+      // Kategori sayfası: erkek kombinleriyle maskot
+      ATELIER.initMascot({ productIds: ['e-tisort', 'e-gomlek', 'e-jean'] });
+    });
   </script>
 </body>
 </html>

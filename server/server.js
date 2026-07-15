@@ -49,6 +49,9 @@ function serveStatic(req, res, urlPath) {
       cors(res);
       res.writeHead(200, {
         'Content-Type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+        // Demo sunucusu: tarayıcı widget.js/products.js gibi dosyaların bayat
+        // kopyasını tutup güncellemeleri gizlemesin — her istekte doğrulasın.
+        'Cache-Control': 'no-cache',
       });
       res.end(data);
     });
@@ -280,6 +283,24 @@ var server = http.createServer(function (req, res) {
     });
     creq.on('error', function () { sendJSON(res, 200, staticCfg); });
     creq.on('timeout', function () { creq.destroy(); });
+    return;
+  }
+
+  // Mağaza vitrini kataloğu: üretim backend'i (4000) çalışıyorsa müşterinin
+  // aktif ürünlerini döner; kapalıysa boş liste (store statik kataloğuna düşer).
+  if (req.method === 'GET' && url === '/api/widget/catalog') {
+    var creq2 = http.get({ host: 'localhost', port: 4000, path: '/api/widget/catalog?token=demo', timeout: 1500 }, function (cres) {
+      var data = '';
+      cres.on('data', function (c) { data += c; });
+      cres.on('end', function () {
+        try {
+          if (cres.statusCode === 200) return sendJSON(res, 200, JSON.parse(data));
+        } catch (e) { /* düş */ }
+        sendJSON(res, 200, { products: [] });
+      });
+    });
+    creq2.on('error', function () { sendJSON(res, 200, { products: [] }); });
+    creq2.on('timeout', function () { creq2.destroy(); });
     return;
   }
 
